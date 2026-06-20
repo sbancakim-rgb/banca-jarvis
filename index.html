@@ -1,5 +1,3 @@
-$ cat "C:/Users/PC/OneDrive/Desktop/방카 자비스/index.html"
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -54,17 +52,35 @@ $ cat "C:/Users/PC/OneDrive/Desktop/방카 자비스/index.html"
       rec.start();
     }
 
-    async function send(action, text) {
+    let jsonpCounter = 0;
+    function jsonpRequest(baseUrl, params, onData) {
+      const callbackName = 'jsonpCb' + (jsonpCounter++);
+      const timeout = setTimeout(() => {
+        cleanup();
+        statusEl.textContent = '오류: 응답 시간 초과 (URL 또는 배포 설정을 확인하세요)';
+      }, 20000);
+
+      function cleanup() {
+        clearTimeout(timeout);
+        delete window[callbackName];
+        script.remove();
+      }
+
+      window[callbackName] = (data) => { cleanup(); onData(data); };
+
+      const qs = new URLSearchParams({ ...params, callback: callbackName }).toString();
+      const script = document.createElement('script');
+      script.src = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + qs;
+      script.onerror = () => { cleanup(); statusEl.textContent = '오류: 요청 실패 (URL을 확인하세요)'; };
+      document.body.appendChild(script);
+    }
+
+    function send(action, text) {
       const url = urlInput.value.trim();
       if (!url) { statusEl.textContent = '먼저 Apps Script 웹앱 URL을 입력하세요.'; return; }
       statusEl.textContent = '처리 중...\n"' + text + '"';
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // preflight 방지
-          body: JSON.stringify({ action, text })
-        });
-        const data = await res.json();
+      jsonpRequest(url, { action, text }, (data) => {
+        if (data.error) { statusEl.textContent = '오류: ' + data.error; return; }
         if (action === 'record') {
           statusEl.textContent = '기록 완료:\n' + JSON.stringify(data.saved, null, 2);
           speak('기록했습니다.');
@@ -72,9 +88,7 @@ $ cat "C:/Users/PC/OneDrive/Desktop/방카 자비스/index.html"
           statusEl.textContent = data.summary;
           speak(data.summary);
         }
-      } catch (err) {
-        statusEl.textContent = '오류: ' + err.message;
-      }
+      });
     }
 
     document.getElementById('recordBtn').onclick = () => listenOnce((t) => send('record', t));
