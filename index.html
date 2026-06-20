@@ -1,3 +1,5 @@
+$ cat "C:/Users/PC/OneDrive/Desktop/방카 자비스/index.html"
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -21,6 +23,8 @@
 
   <button id="recordBtn">🎤 정보 기록 (눌러서 말하기)</button>
   <br/>
+  <button id="cancelBtn" style="background:#888;">❌ 녹음 취소</button>
+  <br/>
   <button id="queryBtn">🏦 지점 조회 (지점명 말하기)</button>
 
   <div id="status"></div>
@@ -38,32 +42,35 @@
     }
 
     const STOP_PHRASES = ['녹음 종료', '입력 종료', '기록 종료'];
+    const CANCEL_PHRASES = ['녹음 취소', '입력 취소', '기록 취소'];
 
     // 버튼을 눌러 시작, 다시 누르거나 "녹음 종료"라고 말하면 끝남.
     // 짧은 침묵에도 끊기지 않도록 continuous 모드 + 끊기면 자동 재시작.
+    // "녹음 취소"라고 말하거나 취소 버튼을 누르면 지금까지 들은 내용은 전송하지 않고 버림.
     function createToggleRecorder(btn, onFinish) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         statusEl.textContent = '이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.';
-        return;
+        return { cancel: () => {} };
       }
 
       let rec = null;
       let listening = false;
       let manualStop = false;
+      let cancelled = false;
       let chunks = [];
       const defaultLabel = btn.textContent;
 
-      function stripStopPhrase(text) {
-        let stopped = false;
+      function stripPhrase(text, phrases) {
+        let found = false;
         let cleaned = text;
-        STOP_PHRASES.forEach((p) => {
+        phrases.forEach((p) => {
           if (cleaned.indexOf(p) !== -1) {
-            stopped = true;
+            found = true;
             cleaned = cleaned.replace(p, '').trim();
           }
         });
-        return { stopped, cleaned };
+        return { found, cleaned };
       }
 
       function finish() {
@@ -71,12 +78,20 @@
         if (rec) rec.stop();
       }
 
+      function cancel() {
+        if (!listening) return;
+        cancelled = true;
+        manualStop = true;
+        if (rec) rec.stop();
+      }
+
       function start() {
         chunks = [];
         manualStop = false;
+        cancelled = false;
         listening = true;
         btn.textContent = '⏹ 종료 (다시 누르거나 "녹음 종료"라고 말하기)';
-        statusEl.textContent = '듣고 있습니다... (말 끝나면 버튼을 다시 누르거나 "녹음 종료"라고 말하세요)';
+        statusEl.textContent = '듣고 있습니다... (취소하려면 취소 버튼 또는 "녹음 취소"라고 말하세요)';
 
         rec = new SpeechRecognition();
         rec.lang = 'ko-KR';
@@ -86,7 +101,10 @@
         rec.onresult = (e) => {
           for (let i = e.resultIndex; i < e.results.length; i++) {
             if (!e.results[i].isFinal) continue;
-            const { stopped, cleaned } = stripStopPhrase(e.results[i][0].transcript);
+            const raw = e.results[i][0].transcript;
+            const cancelCheck = stripPhrase(raw, CANCEL_PHRASES);
+            if (cancelCheck.found) { cancel(); return; }
+            const { found: stopped, cleaned } = stripPhrase(raw, STOP_PHRASES);
             if (cleaned) chunks.push(cleaned);
             if (stopped) finish();
           }
@@ -104,6 +122,10 @@
           }
           listening = false;
           btn.textContent = defaultLabel;
+          if (cancelled) {
+            statusEl.textContent = '녹음을 취소했습니다.';
+            return;
+          }
           const fullText = chunks.join(' ').trim();
           if (fullText) onFinish(fullText);
           else statusEl.textContent = '인식된 내용이 없습니다.';
@@ -116,6 +138,8 @@
         if (!listening) start();
         else finish();
       };
+
+      return { cancel };
     }
 
     let jsonpCounter = 0;
@@ -157,8 +181,9 @@
       });
     }
 
-    createToggleRecorder(document.getElementById('recordBtn'), (t) => send('record', t));
+    const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), (t) => send('record', t));
     createToggleRecorder(document.getElementById('queryBtn'), (t) => send('query', t));
+    document.getElementById('cancelBtn').onclick = () => recordRecorder.cancel();
   </script>
 </body>
 </html>
