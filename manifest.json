@@ -1,6 +1,6 @@
 {
-  "name": "방카 자비스",
-  "short_name": "방카자비스",
+  "name": "Banca Jarvis",
+  "short_name": "Banca Jarvis",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
