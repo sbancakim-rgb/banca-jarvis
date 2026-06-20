@@ -1,3 +1,5 @@
+$ cat "C:/Users/PC/OneDrive/Desktop/방카 자비스/index.html"
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -37,19 +39,85 @@
       speechSynthesis.speak(u);
     }
 
-    function listenOnce(onResult) {
+    const STOP_PHRASES = ['녹음 종료', '입력 종료', '기록 종료'];
+
+    // 버튼을 눌러 시작, 다시 누르거나 "녹음 종료"라고 말하면 끝남.
+    // 짧은 침묵에도 끊기지 않도록 continuous 모드 + 끊기면 자동 재시작.
+    function createToggleRecorder(btn, onFinish) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         statusEl.textContent = '이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.';
         return;
       }
-      const rec = new SpeechRecognition();
-      rec.lang = 'ko-KR';
-      rec.interimResults = false;
-      rec.onresult = (e) => onResult(e.results[0][0].transcript);
-      rec.onerror = (e) => statusEl.textContent = '인식 오류: ' + e.error;
-      statusEl.textContent = '듣고 있습니다...';
-      rec.start();
+
+      let rec = null;
+      let listening = false;
+      let manualStop = false;
+      let chunks = [];
+      const defaultLabel = btn.textContent;
+
+      function stripStopPhrase(text) {
+        let stopped = false;
+        let cleaned = text;
+        STOP_PHRASES.forEach((p) => {
+          if (cleaned.indexOf(p) !== -1) {
+            stopped = true;
+            cleaned = cleaned.replace(p, '').trim();
+          }
+        });
+        return { stopped, cleaned };
+      }
+
+      function finish() {
+        manualStop = true;
+        if (rec) rec.stop();
+      }
+
+      function start() {
+        chunks = [];
+        manualStop = false;
+        listening = true;
+        btn.textContent = '⏹ 종료 (다시 누르거나 "녹음 종료"라고 말하기)';
+        statusEl.textContent = '듣고 있습니다... (말 끝나면 버튼을 다시 누르거나 "녹음 종료"라고 말하세요)';
+
+        rec = new SpeechRecognition();
+        rec.lang = 'ko-KR';
+        rec.continuous = true;
+        rec.interimResults = false;
+
+        rec.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (!e.results[i].isFinal) continue;
+            const { stopped, cleaned } = stripStopPhrase(e.results[i][0].transcript);
+            if (cleaned) chunks.push(cleaned);
+            if (stopped) finish();
+          }
+        };
+
+        rec.onerror = (e) => {
+          if (e.error === 'no-speech') return; // 침묵은 무시하고 계속 듣기
+          statusEl.textContent = '인식 오류: ' + e.error;
+        };
+
+        rec.onend = () => {
+          if (!manualStop && listening) {
+            rec.start(); // 끊기면 자동 재시작 (계속 듣기)
+            return;
+          }
+          listening = false;
+          btn.textContent = defaultLabel;
+          const fullText = chunks.join(' ').trim();
+          if (fullText) onFinish(fullText);
+          else statusEl.textContent = '인식된 내용이 없습니다.';
+        };
+
+        rec.start();
+      }
+
+      btn.onclick = () => {
+        if (!listening) start();
+        else finish();
+      };
     }
 
     let jsonpCounter = 0;
@@ -91,8 +159,8 @@
       });
     }
 
-    document.getElementById('recordBtn').onclick = () => listenOnce((t) => send('record', t));
-    document.getElementById('queryBtn').onclick = () => listenOnce((t) => send('query', t));
+    createToggleRecorder(document.getElementById('recordBtn'), (t) => send('record', t));
+    createToggleRecorder(document.getElementById('queryBtn'), (t) => send('query', t));
   </script>
 </body>
 </html>
