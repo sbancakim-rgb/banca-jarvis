@@ -51,8 +51,8 @@
   }
   input[type="text"], input:not([type]) {
     width: 100%;
-    font-size: 15px;
-    padding: 12px 14px;
+    font-size: 14px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: #f8fafc;
@@ -82,20 +82,21 @@
   .btn-ghost { background: #fff; color: var(--danger); border: 1px solid #fecaca; }
   .btn-stop { background: #fff; color: var(--primary-dark); border: 1px solid #bfdbfe; display: none; }
   .btn-stop.visible { display: flex; }
-  #status {
-    margin-top: 4px;
-    font-size: 14px;
+  .status-box {
+    margin-top: 12px;
+    font-size: 13.5px;
     line-height: 1.6;
     color: var(--text);
     white-space: pre-wrap;
-    min-height: 20px;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: none;
   }
-  #status:empty::before { content: "버튼을 누르고 말씀해주세요."; color: var(--muted); }
+  .status-box.visible { display: block; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 
   /* 검토/수정 폼 */
-  #editForm { display: none; }
-  #editForm.visible { display: block; }
   .field-group { margin-bottom: 14px; }
   .field-group:last-child { margin-bottom: 0; }
   .field-group label {
@@ -127,7 +128,64 @@
     font-weight: 700;
   }
   .section-divider:first-child { margin-top: 0; }
-  .locked-note { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  /* 달력 */
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cal-nav button { width: auto; padding: 8px 14px; font-size: 14px; }
+  .cal-title { font-size: 15px; font-weight: 700; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-cell {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #f8fafc;
+    color: var(--text);
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .cal-cell.empty { background: transparent; cursor: default; }
+  .cal-cell.selected { background: var(--primary); color: #fff; }
+  .cal-day-label { font-size: 11px; color: var(--muted); text-align: center; }
+  #calendarResult { margin-top: 14px; font-size: 13.5px; line-height: 1.6; }
+  .visit-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .visit-item:last-child { border-bottom: none; }
+
+  /* 제안서 */
+  .proposal-card-item {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .proposal-card-item .meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .status-pill {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    width: auto;
+  }
+  .status-pill.대기 { background: #fef3c7; color: #92400e; }
+  .status-pill.완료 { background: #dcfce7; color: #166534; }
+  .proposal-card-item .small-save {
+    width: auto;
+    padding: 8px 12px;
+    font-size: 13px;
+    background: var(--primary);
+    margin-top: 8px;
+  }
+
+  details.settings { margin-top: 24px; }
+  details.settings summary {
+    text-align: center;
+    font-size: 11px;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 8px;
+  }
 </style>
 </head>
 <body>
@@ -138,17 +196,13 @@
 
   <div class="container">
     <div class="card">
-      <h3>연결 설정</h3>
-      <input id="webAppUrl" type="text" placeholder="Apps Script 웹앱 URL" />
-    </div>
-
-    <div class="card">
       <h3>정보 기록</h3>
       <div class="btn-row">
         <button id="recordBtn" class="btn-primary">🎤 눌러서 말하기</button>
         <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
       </div>
-      <div class="hint">말이 끝나면 "녹음완료" 또는 "여기까지"라고 말하세요. 취소하려면 "녹음취소" 또는 "취소할게".</div>
+      <div class="hint">또는 "정보 기록 시작"이라고 말만 해도 시작됩니다. 끝낼 때 "녹음완료"/"여기까지", 취소는 "녹음취소"/"취소할게".</div>
+      <div id="recordStatus" class="status-box"></div>
     </div>
 
     <div class="card" id="editCard" style="display:none;">
@@ -166,21 +220,41 @@
         <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
         <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
       </div>
-      <div class="hint">"은행+지점"만 말하면 전체 판매자, "은행+지점+판매자명"을 말하면 그 사람만 브리핑합니다. 멈추려면 버튼 또는 "오케이"/"여기까지".</div>
+      <div class="hint">또는 "지점 조회 시작"이라고 말만 해도 시작됩니다. 은행+지점(+판매자명) 말한 뒤 "브리핑해줘"라고 하면 바로 시작. 멈추려면 버튼 또는 "오케이"/"여기까지".</div>
+      <div id="queryStatus" class="status-box"></div>
     </div>
 
     <div class="card">
-      <h3>상태</h3>
-      <div id="status"></div>
+      <h3>방문 달력</h3>
+      <div class="cal-nav">
+        <button id="calPrev" class="btn-neutral">‹ 이전</button>
+        <div class="cal-title" id="calTitle"></div>
+        <button id="calNext" class="btn-neutral">다음 ›</button>
+      </div>
+      <div class="cal-grid" id="calDayLabels"></div>
+      <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
+      <div id="calendarResult"></div>
     </div>
+
+    <div class="card">
+      <h3>제안서 요청 현황</h3>
+      <button id="refreshProposalsBtn" class="btn-neutral" style="margin-bottom:12px;">↻ 새로고침</button>
+      <div id="proposalList"></div>
+    </div>
+
+    <details class="settings">
+      <summary>연결 설정</summary>
+      <input id="webAppUrl" type="text" placeholder="Apps Script 웹앱 URL" />
+    </details>
   </div>
 
   <script>
-    const statusEl = document.getElementById('status');
     const urlInput = document.getElementById('webAppUrl');
     const stopListenBtn = document.getElementById('stopListenBtn');
     const editCard = document.getElementById('editCard');
     const editForm = document.getElementById('editForm');
+    const recordStatusEl = document.getElementById('recordStatus');
+    const queryStatusEl = document.getElementById('queryStatus');
     urlInput.value = localStorage.getItem('webAppUrl') || '';
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
 
@@ -192,9 +266,18 @@
         .trim();
     }
 
-    function setStatus(text) {
-      statusEl.textContent = stripSymbols(text);
+    function showStatus(el, text) {
+      el.textContent = stripSymbols(text);
+      el.classList.add('visible');
     }
+    function hideStatus(el) {
+      el.classList.remove('visible');
+      el.textContent = '';
+    }
+    const setRecordStatus = (t) => showStatus(recordStatusEl, t);
+    const clearRecordStatus = () => hideStatus(recordStatusEl);
+    const setQueryStatus = (t) => showStatus(queryStatusEl, t);
+    const clearQueryStatus = () => hideStatus(queryStatusEl);
 
     function speak(text) {
       const u = new SpeechSynthesisUtterance(stripSymbols(text));
@@ -203,7 +286,52 @@
       speechSynthesis.speak(u);
     }
 
-    // ===== 음성 기록 결과를 항목별로 화면에 보여주고, 수정 가능하게 함 =====
+    let jsonpCounter = 0;
+    function jsonpRequest(baseUrl, params, onData) {
+      const callbackName = 'jsonpCb' + (jsonpCounter++);
+      const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과 (URL 또는 배포 설정을 확인하세요)' }); }, 20000);
+      function cleanup() { clearTimeout(timeout); delete window[callbackName]; script.remove(); }
+      window[callbackName] = (data) => { cleanup(); onData(data); };
+      const qs = new URLSearchParams({ ...params, callback: callbackName }).toString();
+      const script = document.createElement('script');
+      script.src = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + qs;
+      script.onerror = () => { cleanup(); onData({ error: '요청 실패 (URL을 확인하세요)' }); };
+      document.body.appendChild(script);
+    }
+
+    // ===================== 항상 듣고 있는 대기 모드 (버튼 없이 음성으로 시작) =====================
+    let appState = 'idle'; // idle | recording | querying
+    let wakeRecognition = null;
+    const START_RECORD_PHRASES = ['정보 기록 시작', '정보기록 시작', '기록 시작'];
+    const START_QUERY_PHRASES = ['지점 조회 시작', '지점조회 시작', '조회 시작'];
+
+    function pauseWakeListener() {
+      if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} wakeRecognition = null; }
+    }
+
+    function resumeWakeListener() {
+      if (appState !== 'idle') return;
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+      const rec = new SpeechRecognition();
+      wakeRecognition = rec;
+      rec.lang = 'ko-KR';
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) continue;
+          const t = e.results[i][0].transcript;
+          if (START_RECORD_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('recordBtn').click(); return; }
+          if (START_QUERY_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('queryBtn').click(); return; }
+        }
+      };
+      rec.onerror = () => {};
+      rec.onend = () => { if (wakeRecognition === rec && appState === 'idle') { try { rec.start(); } catch (e) {} } };
+      try { rec.start(); } catch (e) {}
+    }
+
+    // ===================== 음성 기록 결과를 항목별로 화면에 보여주고, 수정 가능하게 함 =====================
     const FIELD_SECTIONS = [
       { title: '기본 정보 (수정해도 시트의 은행/지점/판매자는 유지됩니다)', fields: [
         ['은행명', '은행명'], ['지점명', '지점명'], ['판매자명', '판매자명'], ['직책', '직책']
@@ -219,22 +347,15 @@
       ['상품명', '상품명'], ['가입금액', '가입금액'], ['고객성명', '고객성명'], ['고객나이', '고객나이'], ['고객성별', '고객성별']
     ];
 
-    let currentParsed = null;
-
     function renderEditForm(parsed) {
-      currentParsed = parsed;
       editForm.innerHTML = '';
-
       FIELD_SECTIONS.forEach((section) => {
         const div = document.createElement('div');
         div.className = 'section-divider';
         div.textContent = section.title;
         editForm.appendChild(div);
-        section.fields.forEach(([key, label]) => {
-          editForm.appendChild(buildField(key, label, parsed[key] || ''));
-        });
+        section.fields.forEach(([key, label]) => editForm.appendChild(buildField(key, label, parsed[key] || '')));
       });
-
       const hasProposal = parsed.proposal_request && parsed.proposal_request['있음'];
       const pDiv = document.createElement('div');
       pDiv.className = 'section-divider';
@@ -244,13 +365,11 @@
         const val = (parsed.proposal_request && parsed.proposal_request[key]) || '';
         editForm.appendChild(buildField('proposal_' + key, label, val));
       });
-
       editCard.style.display = 'block';
       editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
       startEditAutoFlow();
     }
 
-    // 수정 화면에서 "저장"/"취소"를 음성으로도 처리. 5분간 아무 동작 없으면 자동 저장.
     const SAVE_PHRASES = ['이대로 저장', '저장해줘', '저장할게', '저장'];
     const DISCARD_PHRASES = ['저장 취소', '취소해줘', '저장하지마', '취소'];
     let editAutoTimer = null;
@@ -263,10 +382,9 @@
 
     function startEditAutoFlow() {
       stopEditAutoFlow();
-
       editAutoTimer = setTimeout(() => {
         if (editCard.style.display !== 'none') {
-          setStatus('5분간 응답이 없어 인식된 내용 그대로 저장합니다.');
+          setRecordStatus('5분간 응답이 없어 인식된 내용 그대로 저장합니다.');
           document.getElementById('commitBtn').click();
         }
       }, 5 * 60 * 1000);
@@ -282,14 +400,8 @@
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (!e.results[i].isFinal) continue;
           const t = e.results[i][0].transcript;
-          if (DISCARD_PHRASES.some((p) => t.indexOf(p) !== -1)) {
-            document.getElementById('discardBtn').click();
-            return;
-          }
-          if (SAVE_PHRASES.some((p) => t.indexOf(p) !== -1)) {
-            document.getElementById('commitBtn').click();
-            return;
-          }
+          if (DISCARD_PHRASES.some((p) => t.indexOf(p) !== -1)) { document.getElementById('discardBtn').click(); return; }
+          if (SAVE_PHRASES.some((p) => t.indexOf(p) !== -1)) { document.getElementById('commitBtn').click(); return; }
         }
       };
       recog.onerror = () => {};
@@ -307,9 +419,7 @@
       input.id = 'field_' + key;
       input.rows = 1;
       input.value = stripSymbols(value);
-      input.addEventListener('input', () => {
-        input.rows = Math.min(6, Math.max(1, Math.ceil(input.value.length / 28)));
-      });
+      input.addEventListener('input', () => { input.rows = Math.min(6, Math.max(1, Math.ceil(input.value.length / 28))); });
       wrap.appendChild(labelEl);
       wrap.appendChild(input);
       return wrap;
@@ -317,7 +427,7 @@
 
     function collectEditedData() {
       const get = (key) => document.getElementById('field_' + key).value.trim();
-      const data = {
+      return {
         은행명: get('은행명'), 지점명: get('지점명'), 판매자명: get('판매자명'), 직책: get('직책'),
         가족관계: get('가족관계'), 자택: get('자택'), 판매성향: get('판매성향'),
         방문이력: get('방문이력'), 기타대화내용: get('기타대화내용'),
@@ -327,7 +437,6 @@
           고객성명: get('proposal_고객성명'), 고객나이: get('proposal_고객나이'), 고객성별: get('proposal_고객성별')
         }
       };
-      return data;
     }
 
     function formatSaved(saved) {
@@ -347,22 +456,27 @@
       stopEditAutoFlow();
       const data = collectEditedData();
       const url = urlInput.value.trim();
-      if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setStatus('저장 중...');
+      if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setRecordStatus('저장 중...');
       jsonpRequest(url, { action: 'commit', data: JSON.stringify(data) }, (res) => {
-        if (res.error) { setStatus('오류: ' + res.error); return; }
+        if (res.error) { setRecordStatus('오류: ' + res.error); return; }
         editCard.style.display = 'none';
-        setStatus('기록 완료\n\n' + formatSaved(res.saved));
+        setRecordStatus('기록 완료\n\n' + formatSaved(res.saved));
         speak('기록했습니다.');
+        appState = 'idle';
+        resumeWakeListener();
       });
     };
 
     document.getElementById('discardBtn').onclick = () => {
       stopEditAutoFlow();
       editCard.style.display = 'none';
-      setStatus('저장하지 않고 취소했습니다.');
+      setRecordStatus('저장하지 않고 취소했습니다.');
+      appState = 'idle';
+      resumeWakeListener();
     };
 
+    // ===================== 지점 조회 음성 브리핑 =====================
     const LISTEN_STOP_PHRASES = ['오케이', '여기까지'];
 
     function speakSummary(text) {
@@ -370,16 +484,15 @@
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let stopRec = null;
       let active = true;
-
       function cleanupAll() {
         active = false;
         stopListenBtn.classList.remove('visible');
         if (stopRec) { try { stopRec.stop(); } catch (e) {} }
+        appState = 'idle';
+        resumeWakeListener();
       }
-
       stopListenBtn.classList.add('visible');
       stopListenBtn.onclick = () => { speechSynthesis.cancel(); cleanupAll(); };
-
       if (SpeechRecognition) {
         stopRec = new SpeechRecognition();
         stopRec.lang = 'ko-KR';
@@ -389,18 +502,13 @@
           for (let i = e.resultIndex; i < e.results.length; i++) {
             if (!e.results[i].isFinal) continue;
             const t = e.results[i][0].transcript;
-            if (LISTEN_STOP_PHRASES.some((p) => t.indexOf(p) !== -1)) {
-              speechSynthesis.cancel();
-              cleanupAll();
-              return;
-            }
+            if (LISTEN_STOP_PHRASES.some((p) => t.indexOf(p) !== -1)) { speechSynthesis.cancel(); cleanupAll(); return; }
           }
         };
         stopRec.onerror = () => {};
         stopRec.onend = () => { if (active) { try { stopRec.start(); } catch (e) {} } };
         try { stopRec.start(); } catch (e) {}
       }
-
       const u = new SpeechSynthesisUtterance(clean);
       u.lang = 'ko-KR';
       u.onend = cleanupAll;
@@ -409,14 +517,13 @@
       speechSynthesis.speak(u);
     }
 
-    const STOP_PHRASES = ['녹음완료', '녹음 완료', '여기까지'];
-    const CANCEL_PHRASES = ['녹음취소', '녹음 취소', '취소할게'];
-
-    function createToggleRecorder(btn, onFinish) {
+    // ===================== 녹음/조회 음성 캡처 (공용) =====================
+    function createToggleRecorder(btn, onFinish, opts) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const setStatusFn = opts.setStatus;
       if (!SpeechRecognition) {
-        setStatus('이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.');
-        return { cancel: () => {} };
+        setStatusFn('이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.');
+        return { cancel: () => {}, start: () => {} };
       }
 
       let rec = null;
@@ -430,19 +537,12 @@
         let found = false;
         let cleaned = text;
         phrases.forEach((p) => {
-          if (cleaned.indexOf(p) !== -1) {
-            found = true;
-            cleaned = cleaned.replace(p, '').trim();
-          }
+          if (cleaned.indexOf(p) !== -1) { found = true; cleaned = cleaned.replace(p, '').trim(); }
         });
         return { found, cleaned };
       }
 
-      function finish() {
-        manualStop = true;
-        if (rec) rec.stop();
-      }
-
+      function finish() { manualStop = true; if (rec) rec.stop(); }
       function cancel() {
         if (!listening) return;
         cancelled = true;
@@ -451,12 +551,14 @@
       }
 
       function start() {
+        pauseWakeListener();
+        appState = opts.stateName;
         chunks = [];
         manualStop = false;
         cancelled = false;
         listening = true;
         btn.textContent = '⏹ 종료 (다시 누르면 종료)';
-        setStatus('듣고 있습니다...');
+        setStatusFn('듣고 있습니다...');
 
         rec = new SpeechRecognition();
         rec.lang = 'ko-KR';
@@ -468,68 +570,37 @@
           for (let i = e.resultIndex; i < e.results.length; i++) {
             if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
             const raw = e.results[i][0].transcript;
-            const cancelCheck = stripPhrase(raw, CANCEL_PHRASES);
+            const cancelCheck = stripPhrase(raw, opts.cancelPhrases);
             if (cancelCheck.found) { cancel(); return; }
-            const { found: stopped, cleaned } = stripPhrase(raw, STOP_PHRASES);
+            const { found: stopped, cleaned } = stripPhrase(raw, opts.stopPhrases);
             if (cleaned) chunks.push(cleaned);
             if (stopped) { finish(); return; }
           }
-          setStatus('듣고 있습니다...\n' + (chunks.join(' ') + ' ' + interim).trim());
+          setStatusFn('듣고 있습니다...\n' + (chunks.join(' ') + ' ' + interim).trim());
         };
 
-        rec.onerror = (e) => {
-          if (e.error === 'no-speech') return;
-          setStatus('인식 오류: ' + e.error);
-        };
+        rec.onerror = (e) => { if (e.error !== 'no-speech') setStatusFn('인식 오류: ' + e.error); };
 
         rec.onend = () => {
-          if (!manualStop && listening) {
-            rec.start();
-            return;
-          }
+          if (!manualStop && listening) { rec.start(); return; }
           listening = false;
           btn.textContent = defaultLabel;
           if (cancelled) {
-            setStatus('녹음을 취소했습니다.');
+            setStatusFn('취소했습니다.');
+            appState = 'idle';
+            resumeWakeListener();
             return;
           }
           const fullText = chunks.join(' ').trim();
           if (fullText) onFinish(fullText);
-          else setStatus('인식된 내용이 없습니다.');
+          else { setStatusFn('인식된 내용이 없습니다.'); appState = 'idle'; resumeWakeListener(); }
         };
 
         rec.start();
       }
 
-      btn.onclick = () => {
-        if (!listening) start();
-        else finish();
-      };
-
-      return { cancel };
-    }
-
-    let jsonpCounter = 0;
-    function jsonpRequest(baseUrl, params, onData) {
-      const callbackName = 'jsonpCb' + (jsonpCounter++);
-      const timeout = setTimeout(() => {
-        cleanup();
-        setStatus('오류: 응답 시간 초과 (URL 또는 배포 설정을 확인하세요)');
-      }, 20000);
-
-      function cleanup() {
-        clearTimeout(timeout);
-        delete window[callbackName];
-        script.remove();
-      }
-
-      window[callbackName] = (data) => { cleanup(); onData(data); };
-
-      const qs = new URLSearchParams({ ...params, callback: callbackName }).toString();
-      const script = document.createElement('script');
-      script.src = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + qs;
-      script.onerror = () => { cleanup(); setStatus('오류: 요청 실패 (URL을 확인하세요)'); };
-      document.body.appendChild(script);
+      btn.onclick = () => { if (!listening) start(); else finish(); };
+      return { cancel, start };
     }
 
     function buildBriefSummary(parsed) {
@@ -562,7 +633,7 @@
     }
 
     function speakThenListen(message, onResult) {
-      setStatus(message);
+      setRecordStatus(message);
       const u = new SpeechSynthesisUtterance(stripSymbols(message));
       u.lang = 'ko-KR';
       u.onend = () => listenOnceForCorrection(onResult);
@@ -574,15 +645,15 @@
       const msg = buildBriefSummary(parsed) + ' 정정하실 사항이 있으신가요? 없으면 없음이라고 말씀해주세요.';
       speakThenListen(msg, (correctionText) => {
         if (NO_CORRECTION_PHRASES.some((p) => correctionText.indexOf(p) !== -1)) {
-          setStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
+          setRecordStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
           renderEditForm(parsed);
           return;
         }
         const url = urlInput.value.trim();
-        setStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
+        setRecordStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
         jsonpRequest(url, { action: 'reparse', original: originalTranscript, correction: correctionText }, (data2) => {
-          if (data2.error) { setStatus('오류: ' + data2.error); renderEditForm(parsed); return; }
-          setStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
+          if (data2.error) { setRecordStatus('오류: ' + data2.error); renderEditForm(parsed); return; }
+          setRecordStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
           renderEditForm(data2.parsed);
         });
       });
@@ -590,32 +661,179 @@
 
     function handleRecordTranscript(text) {
       const url = urlInput.value.trim();
-      if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setStatus('인식 완료. 확인 중...\n"' + text + '"');
+      if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setRecordStatus('인식 완료. 확인 중...\n"' + text + '"');
       jsonpRequest(url, { action: 'record', text }, (data) => {
-        if (data.error) { setStatus('오류: ' + data.error); return; }
+        if (data.error) { setRecordStatus('오류: ' + data.error); appState = 'idle'; resumeWakeListener(); return; }
         askForCorrection(text, data.parsed);
       });
     }
 
     function handleQueryTranscript(text) {
       const url = urlInput.value.trim();
-      if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setStatus('조회 중...\n"' + text + '"');
+      if (!url) { setQueryStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setQueryStatus('조회 중...\n"' + text + '"');
       jsonpRequest(url, { action: 'query', text }, (data) => {
-        if (data.error) { setStatus('오류: ' + data.error); return; }
-        setStatus(data.summary);
+        if (data.error) { setQueryStatus('오류: ' + data.error); appState = 'idle'; resumeWakeListener(); return; }
+        setQueryStatus(data.summary);
         speakSummary(data.summary);
       });
     }
 
-    const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), handleRecordTranscript);
-    createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript);
+    const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), handleRecordTranscript, {
+      setStatus: setRecordStatus,
+      stopPhrases: ['녹음완료', '녹음 완료', '여기까지'],
+      cancelPhrases: ['녹음취소', '녹음 취소', '취소할게'],
+      stateName: 'recording'
+    });
+    const queryRecorder = createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript, {
+      setStatus: setQueryStatus,
+      stopPhrases: ['브리핑해줘', '브리핑 해줘'],
+      cancelPhrases: ['조회취소', '조회 취소', '취소할게'],
+      stateName: 'querying'
+    });
     document.getElementById('cancelBtn').onclick = () => recordRecorder.cancel();
 
     const autostart = new URLSearchParams(location.search).get('autostart');
     if (autostart === 'record') document.getElementById('recordBtn').click();
-    if (autostart === 'query') document.getElementById('queryBtn').click();
+    else if (autostart === 'query') document.getElementById('queryBtn').click();
+    else resumeWakeListener();
+
+    // ===================== 방문 달력 =====================
+    let calMonthOffset = 0;
+    const calGrid = document.getElementById('calGrid');
+    const calDayLabels = document.getElementById('calDayLabels');
+    const calTitle = document.getElementById('calTitle');
+    const calendarResult = document.getElementById('calendarResult');
+    ['일', '월', '화', '수', '목', '금', '토'].forEach((d) => {
+      const el = document.createElement('div');
+      el.className = 'cal-day-label';
+      el.textContent = d;
+      calDayLabels.appendChild(el);
+    });
+
+    function renderCalendar() {
+      const base = new Date();
+      base.setDate(1);
+      base.setMonth(base.getMonth() + calMonthOffset);
+      const year = base.getFullYear();
+      const month = base.getMonth();
+      calTitle.textContent = year + '년 ' + (month + 1) + '월';
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      calGrid.innerHTML = '';
+      for (let i = 0; i < firstDay; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'cal-cell empty';
+        calGrid.appendChild(empty);
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell';
+        cell.textContent = d;
+        const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        cell.onclick = () => selectCalendarDate(dateStr, cell);
+        calGrid.appendChild(cell);
+      }
+    }
+
+    function selectCalendarDate(dateStr, cell) {
+      document.querySelectorAll('.cal-cell.selected').forEach((c) => c.classList.remove('selected'));
+      cell.classList.add('selected');
+      const url = urlInput.value.trim();
+      if (!url) { calendarResult.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
+      calendarResult.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'calendarDay', date: dateStr }, (data) => {
+        if (data.error) { calendarResult.textContent = '오류: ' + data.error; return; }
+        if (!data.visits || data.visits.length === 0) { calendarResult.textContent = dateStr + ' 방문 기록이 없습니다.'; return; }
+        calendarResult.innerHTML = '';
+        data.visits.forEach((v) => {
+          const div = document.createElement('div');
+          div.className = 'visit-item';
+          div.textContent = stripSymbols(v.은행명 + ' ' + v.지점명 + ' - ' + v.판매자명 + (v.방문이력 ? ' (' + v.방문이력 + ')' : ''));
+          calendarResult.appendChild(div);
+        });
+      });
+    }
+
+    document.getElementById('calPrev').onclick = () => { calMonthOffset--; renderCalendar(); };
+    document.getElementById('calNext').onclick = () => { calMonthOffset++; renderCalendar(); };
+    renderCalendar();
+
+    // ===================== 제안서 요청 현황 =====================
+    const proposalList = document.getElementById('proposalList');
+
+    function loadProposals() {
+      const url = urlInput.value.trim();
+      if (!url) { proposalList.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
+      proposalList.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'listProposals' }, (data) => {
+        if (data.error) { proposalList.textContent = '오류: ' + data.error; return; }
+        proposalList.innerHTML = '';
+        if (!data.items || data.items.length === 0) { proposalList.textContent = '제안서 요청이 없습니다.'; return; }
+        data.items.forEach((item) => proposalList.appendChild(buildProposalCard(item, data.header)));
+      });
+    }
+
+    function buildProposalCard(item, header) {
+      const wrap = document.createElement('div');
+      wrap.className = 'proposal-card-item';
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = stripSymbols([item['날짜'], item['은행명'], item['지점명'], item['판매자명']].filter(Boolean).join(' · '));
+      wrap.appendChild(meta);
+
+      const editableFields = ['상품명', '가입금액', '고객성명', '고객나이', '고객성별'];
+      const inputs = {};
+      editableFields.forEach((key) => {
+        const group = document.createElement('div');
+        group.className = 'field-group';
+        const label = document.createElement('label');
+        label.textContent = key;
+        const input = document.createElement('textarea');
+        input.rows = 1;
+        input.value = stripSymbols(item[key] || '');
+        inputs[key] = input;
+        group.appendChild(label);
+        group.appendChild(input);
+        wrap.appendChild(group);
+      });
+
+      let status = item['처리상태'] === '완료' ? '완료' : '대기';
+      const pill = document.createElement('div');
+      pill.className = 'status-pill ' + status;
+      pill.textContent = status === '완료' ? '✓ 완료' : '● 대기 (눌러서 완료 처리)';
+      pill.onclick = () => {
+        status = status === '대기' ? '완료' : '대기';
+        pill.className = 'status-pill ' + status;
+        pill.textContent = status === '완료' ? '✓ 완료' : '● 대기 (눌러서 완료 처리)';
+        saveProposal();
+      };
+      wrap.appendChild(pill);
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'small-save';
+      saveBtn.textContent = '저장';
+      saveBtn.onclick = saveProposal;
+      wrap.appendChild(saveBtn);
+
+      function saveProposal() {
+        const url = urlInput.value.trim();
+        const data = {};
+        header.forEach((h) => { data[h] = item[h]; });
+        editableFields.forEach((key) => { data[key] = inputs[key].value.trim(); });
+        data['처리상태'] = status;
+        jsonpRequest(url, { action: 'updateProposal', rowIndex: item.rowIndex, data: JSON.stringify(data) }, (res) => {
+          if (res.error) { alert('저장 오류: ' + res.error); }
+        });
+      }
+
+      return wrap;
+    }
+
+    document.getElementById('refreshProposalsBtn').onclick = loadProposals;
+    loadProposals();
   </script>
 </body>
 </html>
