@@ -198,10 +198,10 @@
     <div class="card">
       <h3>정보 기록</h3>
       <div class="btn-row">
-        <button id="recordBtn" class="btn-primary">🎤 눌러서 말하기</button>
+        <button id="recordBtn" class="btn-primary">🎤 방문 기록 남기기</button>
         <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
       </div>
-      <div class="hint">또는 "정보 기록 시작"이라고 말만 해도 시작됩니다. 끝낼 때 "녹음완료"/"여기까지", 취소는 "녹음취소"/"취소할게".</div>
+      <div class="hint">"기록"이나 "시작"이 들어간 말만 해도 시작됩니다. 끝낼 땐 "완료"나 "여기까지", 취소는 "취소"나 "다시"가 들어간 말.</div>
       <div id="recordStatus" class="status-box"></div>
     </div>
 
@@ -220,7 +220,7 @@
         <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
         <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
       </div>
-      <div class="hint">또는 "지점 조회 시작"이라고 말만 해도 시작됩니다. 은행+지점(+판매자명) 말한 뒤 "브리핑해줘"라고 하면 바로 시작. 멈추려면 버튼 또는 "오케이"/"여기까지".</div>
+      <div class="hint">"지점조회"/"조회"/"브리핑"이라고 말만 해도 시작됩니다. 은행+지점(+판매자명) 말한 뒤 "브리핑"이 들어간 말을 하면 바로 시작. 멈추려면 버튼 또는 "오케이"/"여기까지".</div>
       <div id="queryStatus" class="status-box"></div>
     </div>
 
@@ -302,8 +302,8 @@
     // ===================== 항상 듣고 있는 대기 모드 (버튼 없이 음성으로 시작) =====================
     let appState = 'idle'; // idle | recording | querying
     let wakeRecognition = null;
-    const START_RECORD_PHRASES = ['정보 기록 시작', '정보기록 시작', '기록 시작'];
-    const START_QUERY_PHRASES = ['지점 조회 시작', '지점조회 시작', '조회 시작'];
+    const START_RECORD_PHRASES = ['기록', '시작'];
+    const START_QUERY_PHRASES = ['지점조회', '조회', '브리핑'];
 
     function pauseWakeListener() {
       if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} wakeRecognition = null; }
@@ -557,7 +557,7 @@
         manualStop = false;
         cancelled = false;
         listening = true;
-        btn.textContent = '⏹ 종료 (다시 누르면 종료)';
+        btn.textContent = opts.listeningLabel || '⏹ 입력완료 (다시 누르면 종료)';
         setStatusFn('듣고 있습니다...');
 
         rec = new SpeechRecognition();
@@ -682,15 +682,17 @@
 
     const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), handleRecordTranscript, {
       setStatus: setRecordStatus,
-      stopPhrases: ['녹음완료', '녹음 완료', '여기까지'],
-      cancelPhrases: ['녹음취소', '녹음 취소', '취소할게'],
-      stateName: 'recording'
+      stopPhrases: ['완료', '여기까지'],
+      cancelPhrases: ['취소', '다시'],
+      stateName: 'recording',
+      listeningLabel: '⏹ 입력완료 (다시 누르면 종료)'
     });
     const queryRecorder = createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript, {
       setStatus: setQueryStatus,
-      stopPhrases: ['브리핑해줘', '브리핑 해줘'],
-      cancelPhrases: ['조회취소', '조회 취소', '취소할게'],
-      stateName: 'querying'
+      stopPhrases: ['브리핑'],
+      cancelPhrases: ['취소', '다시'],
+      stateName: 'querying',
+      listeningLabel: '⏹ 브리핑 (다시 누르면 종료)'
     });
     document.getElementById('cancelBtn').onclick = () => recordRecorder.cancel();
 
