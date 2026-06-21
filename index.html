@@ -630,20 +630,21 @@
       return body;
     }
 
-    const NO_CORRECTION_PHRASES = ['없음', '없어요', '없습니다', '없어', '괜찮아요', '괜찮습니다'];
+    const CONFIRM_PHRASES = ['이상없어', '이상 없어', '맞아', '맞습니다', '맞어', '오케이', '저장', '괜찮아', '괜찮습니다', '응', '네'];
+    const EDIT_TRIGGER_PHRASES = ['수정', '정정', '다시'];
 
     function listenOnceForCorrection(onResult) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) { onResult('없음'); return; }
+      if (!SpeechRecognition) { onResult('저장'); return; }
       const rec = new SpeechRecognition();
       rec.lang = 'ko-KR';
       rec.interimResults = false;
       rec.continuous = false;
       let done = false;
       rec.onresult = (e) => { done = true; onResult(e.results[0][0].transcript); };
-      rec.onerror = () => { if (!done) { done = true; onResult('없음'); } };
-      rec.onend = () => { if (!done) { done = true; onResult('없음'); } };
-      try { rec.start(); } catch (e) { onResult('없음'); }
+      rec.onerror = () => { if (!done) { done = true; onResult(''); } };
+      rec.onend = () => { if (!done) { done = true; onResult(''); } };
+      try { rec.start(); } catch (e) { onResult(''); }
     }
 
     function speakThenListen(message, onResult) {
@@ -655,21 +656,40 @@
       speechSynthesis.speak(u);
     }
 
-    function askForCorrection(originalTranscript, parsed) {
-      const msg = buildBriefSummary(parsed) + ' 정정하실 사항이 있으신가요? 없으면 없음이라고 말씀해주세요.';
-      speakThenListen(msg, (correctionText) => {
-        if (NO_CORRECTION_PHRASES.some((p) => correctionText.indexOf(p) !== -1)) {
-          setRecordStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
-          renderEditForm(parsed);
+    function commitParsedData(data) {
+      const url = urlInput.value.trim();
+      if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setRecordStatus('저장 중...');
+      jsonpRequest(url, { action: 'commit', data: JSON.stringify(data) }, (res) => {
+        if (res.error) { setRecordStatus('오류: ' + res.error); appState = 'idle'; resumeWakeListener(); return; }
+        setRecordStatus('기록 완료\n\n' + formatSaved(res.saved));
+        speak('기록했습니다.');
+        appState = 'idle';
+        resumeWakeListener();
+      });
+    }
+
+    // 음성으로만 끝까지 확인: 요약을 들려주고 "맞아/저장"이면 바로 저장, "수정/정정/다시"면 정정 내용을 다시 듣고 반영한 뒤 또 확인.
+    function confirmLoop(originalTranscript, parsed) {
+      const msg = buildBriefSummary(parsed) + ' 이상 없으면 맞아 또는 저장이라고 말씀해주시고, 고칠 부분이 있으면 수정이라고 말씀해주세요.';
+      speakThenListen(msg, (responseText) => {
+        if (CONFIRM_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
+          commitParsedData(parsed);
           return;
         }
-        const url = urlInput.value.trim();
-        setRecordStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
-        jsonpRequest(url, { action: 'reparse', original: originalTranscript, correction: correctionText }, (data2) => {
-          if (data2.error) { setRecordStatus('오류: ' + data2.error); renderEditForm(parsed); return; }
-          setRecordStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
-          renderEditForm(data2.parsed);
-        });
+        if (EDIT_TRIGGER_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
+          speakThenListen('수정할 내용을 말씀해주세요.', (correctionText) => {
+            const url = urlInput.value.trim();
+            setRecordStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
+            jsonpRequest(url, { action: 'reparse', original: originalTranscript, correction: correctionText }, (data2) => {
+              if (data2.error) { setRecordStatus('오류: ' + data2.error); confirmLoop(originalTranscript, parsed); return; }
+              confirmLoop(originalTranscript, data2.parsed);
+            });
+          });
+          return;
+        }
+        // 애매하게 들렸으면 같은 내용으로 다시 확인
+        confirmLoop(originalTranscript, parsed);
       });
     }
 
@@ -679,7 +699,7 @@
       setRecordStatus('인식 완료. 확인 중...\n"' + text + '"');
       jsonpRequest(url, { action: 'record', text }, (data) => {
         if (data.error) { setRecordStatus('오류: ' + data.error); appState = 'idle'; resumeWakeListener(); return; }
-        askForCorrection(text, data.parsed);
+        confirmLoop(text, data.parsed);
       });
     }
 
