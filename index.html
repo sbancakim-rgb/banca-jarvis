@@ -148,7 +148,7 @@
         <button id="recordBtn" class="btn-primary">🎤 눌러서 말하기</button>
         <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
       </div>
-      <div class="hint">말이 끝나면 버튼을 다시 누르거나 "녹음 종료"라고 말하세요. 취소하려면 "녹음 취소".</div>
+      <div class="hint">말이 끝나면 "녹음완료" 또는 "여기까지"라고 말하세요. 취소하려면 "녹음취소" 또는 "취소할게".</div>
     </div>
 
     <div class="card" id="editCard" style="display:none;">
@@ -166,7 +166,7 @@
         <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
         <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
       </div>
-      <div class="hint">브리핑을 멈추려면 버튼을 누르거나 "오케이 여기까지"라고 말하세요.</div>
+      <div class="hint">"은행+지점"만 말하면 전체 판매자, "은행+지점+판매자명"을 말하면 그 사람만 브리핑합니다. 멈추려면 버튼 또는 "오케이"/"여기까지".</div>
     </div>
 
     <div class="card">
@@ -363,7 +363,7 @@
       setStatus('저장하지 않고 취소했습니다.');
     };
 
-    const LISTEN_STOP_PHRASES = ['오케이 여기까지'];
+    const LISTEN_STOP_PHRASES = ['오케이', '여기까지'];
 
     function speakSummary(text) {
       const clean = stripSymbols(text);
@@ -409,8 +409,8 @@
       speechSynthesis.speak(u);
     }
 
-    const STOP_PHRASES = ['녹음 종료', '입력 종료', '기록 종료'];
-    const CANCEL_PHRASES = ['녹음 취소', '입력 취소', '기록 취소'];
+    const STOP_PHRASES = ['녹음완료', '녹음 완료', '여기까지'];
+    const CANCEL_PHRASES = ['녹음취소', '녹음 취소', '취소할게'];
 
     function createToggleRecorder(btn, onFinish) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -461,18 +461,20 @@
         rec = new SpeechRecognition();
         rec.lang = 'ko-KR';
         rec.continuous = true;
-        rec.interimResults = false;
+        rec.interimResults = true;
 
         rec.onresult = (e) => {
+          let interim = '';
           for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (!e.results[i].isFinal) continue;
+            if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
             const raw = e.results[i][0].transcript;
             const cancelCheck = stripPhrase(raw, CANCEL_PHRASES);
             if (cancelCheck.found) { cancel(); return; }
             const { found: stopped, cleaned } = stripPhrase(raw, STOP_PHRASES);
             if (cleaned) chunks.push(cleaned);
-            if (stopped) finish();
+            if (stopped) { finish(); return; }
           }
+          setStatus('듣고 있습니다...\n' + (chunks.join(' ') + ' ' + interim).trim());
         };
 
         rec.onerror = (e) => {
@@ -530,14 +532,69 @@
       document.body.appendChild(script);
     }
 
+    function buildBriefSummary(parsed) {
+      const lead = ['은행명', '지점명', '판매자명', '직책'].map((k) => parsed[k]).filter(Boolean).join(' ');
+      const extra = [];
+      if (parsed['가족관계']) extra.push('가족관계는 ' + parsed['가족관계']);
+      if (parsed['자택']) extra.push('자택은 ' + parsed['자택']);
+      if (parsed['판매성향']) extra.push('판매성향은 ' + parsed['판매성향']);
+      if (parsed['방문이력']) extra.push('방문이력은 ' + parsed['방문이력']);
+      if (parsed['기타대화내용']) extra.push('기타로 ' + parsed['기타대화내용']);
+      let body = lead ? lead + '으로 인식했습니다.' : '내용을 인식했습니다.';
+      if (extra.length) body += ' ' + extra.join(', ') + '.';
+      return body;
+    }
+
+    const NO_CORRECTION_PHRASES = ['없음', '없어요', '없습니다', '없어', '괜찮아요', '괜찮습니다'];
+
+    function listenOnceForCorrection(onResult) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) { onResult('없음'); return; }
+      const rec = new SpeechRecognition();
+      rec.lang = 'ko-KR';
+      rec.interimResults = false;
+      rec.continuous = false;
+      let done = false;
+      rec.onresult = (e) => { done = true; onResult(e.results[0][0].transcript); };
+      rec.onerror = () => { if (!done) { done = true; onResult('없음'); } };
+      rec.onend = () => { if (!done) { done = true; onResult('없음'); } };
+      try { rec.start(); } catch (e) { onResult('없음'); }
+    }
+
+    function speakThenListen(message, onResult) {
+      setStatus(message);
+      const u = new SpeechSynthesisUtterance(stripSymbols(message));
+      u.lang = 'ko-KR';
+      u.onend = () => listenOnceForCorrection(onResult);
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+
+    function askForCorrection(originalTranscript, parsed) {
+      const msg = buildBriefSummary(parsed) + ' 정정하실 사항이 있으신가요? 없으면 없음이라고 말씀해주세요.';
+      speakThenListen(msg, (correctionText) => {
+        if (NO_CORRECTION_PHRASES.some((p) => correctionText.indexOf(p) !== -1)) {
+          setStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
+          renderEditForm(parsed);
+          return;
+        }
+        const url = urlInput.value.trim();
+        setStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
+        jsonpRequest(url, { action: 'reparse', original: originalTranscript, correction: correctionText }, (data2) => {
+          if (data2.error) { setStatus('오류: ' + data2.error); renderEditForm(parsed); return; }
+          setStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
+          renderEditForm(data2.parsed);
+        });
+      });
+    }
+
     function handleRecordTranscript(text) {
       const url = urlInput.value.trim();
       if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setStatus('인식 중...\n"' + text + '"');
+      setStatus('인식 완료. 확인 중...\n"' + text + '"');
       jsonpRequest(url, { action: 'record', text }, (data) => {
         if (data.error) { setStatus('오류: ' + data.error); return; }
-        setStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
-        renderEditForm(data.parsed);
+        askForCorrection(text, data.parsed);
       });
     }
 
