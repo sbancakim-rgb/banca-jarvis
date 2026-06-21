@@ -183,6 +183,34 @@
     margin-top: 8px;
   }
 
+  /* 대시보드 */
+  .dash-bank { margin-bottom: 16px; }
+  .dash-bank:last-child { margin-bottom: 0; }
+  .dash-bank-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .dash-bar-track {
+    position: relative;
+    height: 22px;
+    border-radius: 8px;
+    background: #fee2e2;
+    overflow: hidden;
+  }
+  .dash-bar-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: #16a34a;
+    border-radius: 8px 0 0 8px;
+  }
+  .dash-bar-label {
+    position: relative;
+    z-index: 1;
+    font-size: 11px;
+    line-height: 22px;
+    padding: 0 8px;
+    color: #fff;
+    font-weight: 700;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.25);
+  }
+  .dash-stats { display: flex; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--muted); }
+
   details.settings { margin-top: 24px; }
   details.settings summary {
     text-align: center;
@@ -248,6 +276,13 @@
       <div class="cal-grid" id="calDayLabels"></div>
       <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
       <div id="calendarResult"></div>
+    </div>
+
+    <div class="card">
+      <h3>이번 달 방문 현황</h3>
+      <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:12px;">↻ 새로고침</button>
+      <div id="dashboardList"></div>
+      <div class="hint">모수는 판매자정보 시트 K열(영업대상)에 체크된 지점 기준으로 집계됩니다.</div>
     </div>
 
     <div class="card">
@@ -320,29 +355,43 @@
     const START_QUERY_PHRASES = ['지점', '조회', '브리핑'];
 
     function pauseWakeListener() {
-      if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} wakeRecognition = null; }
+      if (wakeRecognition) { try { wakeRecognition.onend = null; wakeRecognition.abort(); } catch (e) {} wakeRecognition = null; }
     }
 
     function resumeWakeListener() {
-      if (appState !== 'idle') return;
+      if (appState !== 'idle' || wakeRecognition) return;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) return;
-      const rec = new SpeechRecognition();
-      wakeRecognition = rec;
-      rec.lang = 'ko-KR';
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (!e.results[i].isFinal) continue;
-          const t = e.results[i][0].transcript;
-          if (START_RECORD_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('recordBtn').click(); return; }
-          if (START_QUERY_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('queryBtn').click(); return; }
+      // 이전 인식 객체가 완전히 정리될 시간을 살짝 줘서 "이미 실행 중" 오류로 멈추는 것을 방지
+      setTimeout(() => {
+        if (appState !== 'idle' || wakeRecognition) return;
+        try {
+          const rec = new SpeechRecognition();
+          wakeRecognition = rec;
+          rec.lang = 'ko-KR';
+          rec.continuous = true;
+          rec.interimResults = false;
+          rec.onresult = (e) => {
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              if (!e.results[i].isFinal) continue;
+              const t = e.results[i][0].transcript;
+              if (START_RECORD_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('recordBtn').click(); return; }
+              if (START_QUERY_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('queryBtn').click(); return; }
+            }
+          };
+          rec.onerror = () => {};
+          rec.onend = () => {
+            if (wakeRecognition === rec && appState === 'idle') {
+              wakeRecognition = null;
+              setTimeout(resumeWakeListener, 300);
+            }
+          };
+          rec.start();
+        } catch (e) {
+          wakeRecognition = null;
+          setTimeout(resumeWakeListener, 1000);
         }
-      };
-      rec.onerror = () => {};
-      rec.onend = () => { if (wakeRecognition === rec && appState === 'idle') { try { rec.start(); } catch (e) {} } };
-      try { rec.start(); } catch (e) {}
+      }, 300);
     }
 
     // ===================== 음성 기록 결과를 항목별로 화면에 보여주고, 수정 가능하게 함 =====================
@@ -579,18 +628,26 @@
         rec.continuous = true;
         rec.interimResults = true;
 
+        function pushChunk(cleaned) {
+          if (!cleaned) return;
+          const last = chunks[chunks.length - 1] || '';
+          if (cleaned === last || (last && last.indexOf(cleaned) !== -1)) return; // 재시작 시 같은 말이 다시 잡히는 중복 방지
+          chunks.push(cleaned);
+        }
+
         rec.onresult = (e) => {
           let interim = '';
           for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (!e.results[i].isFinal) { interim += e.results[i][0].transcript; continue; }
+            if (!e.results[i].isFinal) { interim = e.results[i][0].transcript; continue; }
             const raw = e.results[i][0].transcript;
             const cancelCheck = stripPhrase(raw, opts.cancelPhrases);
             if (cancelCheck.found) { cancel(); return; }
             const { found: stopped, cleaned } = stripPhrase(raw, opts.stopPhrases);
-            if (cleaned) chunks.push(cleaned);
+            pushChunk(cleaned);
             if (stopped) { finish(); return; }
           }
-          setStatusFn('듣고 있습니다...\n' + (chunks.join(' ') + ' ' + interim).trim());
+          const liveText = interim ? chunks.join(' ') + ' ' + interim : chunks.join(' ');
+          setStatusFn('듣고 있습니다...\n' + liveText.trim());
         };
 
         rec.onerror = (e) => { if (e.error !== 'no-speech') setStatusFn('인식 오류: ' + e.error); };
@@ -633,25 +690,42 @@
     const CONFIRM_PHRASES = ['이상없어', '이상 없어', '맞아', '맞습니다', '맞어', '오케이', '저장', '괜찮아', '괜찮습니다', '응', '네'];
     const EDIT_TRIGGER_PHRASES = ['수정', '정정', '다시'];
 
-    function listenOnceForCorrection(onResult) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) { onResult('저장'); return; }
-      const rec = new SpeechRecognition();
-      rec.lang = 'ko-KR';
-      rec.interimResults = false;
-      rec.continuous = false;
-      let done = false;
-      rec.onresult = (e) => { done = true; onResult(e.results[0][0].transcript); };
-      rec.onerror = () => { if (!done) { done = true; onResult(''); } };
-      rec.onend = () => { if (!done) { done = true; onResult(''); } };
-      try { rec.start(); } catch (e) { onResult(''); }
-    }
-
+    // AI가 말하는 도중이라도 "맞아/저장/수정" 등을 바로 말하면 끼어들어 처리됨 (말이 끝날 때까지 안 기다려도 됨)
     function speakThenListen(message, onResult) {
       setRecordStatus(message);
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const u = new SpeechSynthesisUtterance(stripSymbols(message));
       u.lang = 'ko-KR';
-      u.onend = () => listenOnceForCorrection(onResult);
+      let done = false;
+      let rec = null;
+
+      function finishOnce(text) {
+        if (done) return;
+        done = true;
+        speechSynthesis.cancel();
+        if (rec) { try { rec.onend = null; rec.abort(); } catch (e) {} }
+        onResult(text);
+      }
+
+      if (SpeechRecognition) {
+        rec = new SpeechRecognition();
+        rec.lang = 'ko-KR';
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (!e.results[i].isFinal) continue;
+            finishOnce(e.results[i][0].transcript);
+            return;
+          }
+        };
+        rec.onerror = () => {};
+        rec.onend = () => { if (!done) { try { rec.start(); } catch (e) {} } };
+        try { rec.start(); } catch (e) {}
+      } else {
+        u.onend = () => finishOnce('');
+      }
+
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
     }
@@ -783,6 +857,11 @@
         if (data.error) { calendarResult.textContent = '오류: ' + data.error; return; }
         if (!data.visits || data.visits.length === 0) { calendarResult.textContent = dateStr + ' 방문 기록이 없습니다.'; return; }
         calendarResult.innerHTML = '';
+        const header = document.createElement('div');
+        header.style.fontWeight = '700';
+        header.style.marginBottom = '8px';
+        header.textContent = '방문지점 : ' + data.branchCount + '개 지점 (판매자 ' + data.sellerCount + '명)';
+        calendarResult.appendChild(header);
         data.visits.forEach((v) => {
           const div = document.createElement('div');
           div.className = 'visit-item';
@@ -870,6 +949,53 @@
 
     document.getElementById('refreshProposalsBtn').onclick = loadProposals;
     loadProposals();
+
+    // ===================== 대시보드 (은행별 모수/당월방문/미방문) =====================
+    const dashboardList = document.getElementById('dashboardList');
+
+    function loadDashboard() {
+      const url = urlInput.value.trim();
+      if (!url) { dashboardList.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
+      dashboardList.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'dashboard' }, (data) => {
+        if (data.error) { dashboardList.textContent = '오류: ' + data.error; return; }
+        dashboardList.innerHTML = '';
+        if (!data.banks || data.banks.length === 0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
+        data.banks.forEach((b) => dashboardList.appendChild(buildDashboardBank(b)));
+      });
+    }
+
+    function buildDashboardBank(b) {
+      const wrap = document.createElement('div');
+      wrap.className = 'dash-bank';
+      const name = document.createElement('div');
+      name.className = 'dash-bank-name';
+      name.textContent = stripSymbols(b.은행명);
+      wrap.appendChild(name);
+
+      const track = document.createElement('div');
+      track.className = 'dash-bar-track';
+      const pct = b.모수 > 0 ? Math.round((b.당월방문 / b.모수) * 100) : 0;
+      const fill = document.createElement('div');
+      fill.className = 'dash-bar-fill';
+      fill.style.width = pct + '%';
+      const label = document.createElement('div');
+      label.className = 'dash-bar-label';
+      label.textContent = b.당월방문 + ' / ' + b.모수 + ' (' + pct + '%)';
+      track.appendChild(fill);
+      track.appendChild(label);
+      wrap.appendChild(track);
+
+      const stats = document.createElement('div');
+      stats.className = 'dash-stats';
+      stats.innerHTML = '<span>모수 ' + b.모수 + '</span><span>당월방문 ' + b.당월방문 + '</span><span>미방문 ' + b.미방문 + '</span>';
+      wrap.appendChild(stats);
+
+      return wrap;
+    }
+
+    document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
+    loadDashboard();
   </script>
 </body>
 </html>
