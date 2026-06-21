@@ -95,6 +95,11 @@
   }
   .status-box.visible { display: block; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .cmd-list { margin-top: 8px; }
+  .cmd-row { display: flex; gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; align-items: baseline; }
+  .cmd-row .cmd-label { flex: 0 0 52px; font-weight: 700; color: var(--text); }
+  .cmd-row .cmd-words { }
+  .cmd-words b { color: var(--primary-dark); font-weight: 600; }
 
   /* 검토/수정 폼 */
   .field-group { margin-bottom: 14px; }
@@ -201,7 +206,11 @@
         <button id="recordBtn" class="btn-primary">🎤 방문 기록 남기기</button>
         <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
       </div>
-      <div class="hint">"기록"이나 "시작"이 들어간 말만 해도 시작됩니다. 끝낼 땐 "완료"나 "여기까지", 취소는 "취소"나 "다시"가 들어간 말.</div>
+      <div class="cmd-list">
+        <div class="cmd-row"><span class="cmd-label">시작</span><span class="cmd-words">"<b>기록</b>", "<b>시작</b>"</span></div>
+        <div class="cmd-row"><span class="cmd-label">완료</span><span class="cmd-words">"<b>완료</b>", "<b>여기까지</b>"</span></div>
+        <div class="cmd-row"><span class="cmd-label">취소</span><span class="cmd-words">"<b>취소</b>"</span></div>
+      </div>
       <div id="recordStatus" class="status-box"></div>
     </div>
 
@@ -220,7 +229,12 @@
         <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
         <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
       </div>
-      <div class="hint">"지점조회"/"조회"/"브리핑"이라고 말만 해도 시작됩니다. 은행+지점(+판매자명) 말한 뒤 "브리핑"이 들어간 말을 하면 바로 시작. 멈추려면 버튼 또는 "오케이"/"여기까지".</div>
+      <div class="hint">은행+지점(+판매자명)을 말한 뒤 "브리핑"이 들어간 말을 하면 바로 시작됩니다.</div>
+      <div class="cmd-list">
+        <div class="cmd-row"><span class="cmd-label">시작</span><span class="cmd-words">"<b>지점</b>", "<b>조회</b>", "<b>브리핑</b>"</span></div>
+        <div class="cmd-row"><span class="cmd-label">완료</span><span class="cmd-words">"<b>브리핑</b>"</span></div>
+        <div class="cmd-row"><span class="cmd-label">멈춤</span><span class="cmd-words">"<b>오케이</b>", "<b>여기까지</b>" (브리핑 음성 듣는 중)</span></div>
+      </div>
       <div id="queryStatus" class="status-box"></div>
     </div>
 
@@ -303,7 +317,7 @@
     let appState = 'idle'; // idle | recording | querying
     let wakeRecognition = null;
     const START_RECORD_PHRASES = ['기록', '시작'];
-    const START_QUERY_PHRASES = ['지점조회', '조회', '브리핑'];
+    const START_QUERY_PHRASES = ['지점', '조회', '브리핑'];
 
     function pauseWakeListener() {
       if (wakeRecognition) { try { wakeRecognition.stop(); } catch (e) {} wakeRecognition = null; }
@@ -683,14 +697,14 @@
     const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), handleRecordTranscript, {
       setStatus: setRecordStatus,
       stopPhrases: ['완료', '여기까지'],
-      cancelPhrases: ['취소', '다시'],
+      cancelPhrases: ['취소'],
       stateName: 'recording',
       listeningLabel: '⏹ 입력완료 (다시 누르면 종료)'
     });
     const queryRecorder = createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript, {
       setStatus: setQueryStatus,
       stopPhrases: ['브리핑'],
-      cancelPhrases: ['취소', '다시'],
+      cancelPhrases: [],
       stateName: 'querying',
       listeningLabel: '⏹ 브리핑 (다시 누르면 종료)'
     });
