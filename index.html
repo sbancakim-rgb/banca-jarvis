@@ -6,54 +6,416 @@
 <title>Banca Jarvis</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="theme-color" content="#2b6fd9" />
+<meta name="theme-color" content="#1d4ed8" />
 <link rel="icon" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <style>
-  body { font-family: sans-serif; text-align: center; padding: 20px; background: #f5f5f7; }
-  button { font-size: 18px; padding: 16px 24px; margin: 10px; border-radius: 12px; border: none; color: white; width: 90%; max-width: 320px; }
-  #recordBtn { background: #d92b2b; }
-  #queryBtn { background: #2b6fd9; }
-  #status { margin-top: 16px; font-size: 16px; color: #333; white-space: pre-wrap; }
-  input { font-size: 16px; padding: 10px; width: 80%; max-width: 300px; margin-top: 10px; }
+  :root {
+    --bg: #0f172a;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --danger: #dc2626;
+    --neutral: #64748b;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    background: linear-gradient(180deg, var(--bg) 0%, #1e293b 160px, #f1f5f9 160px, #f1f5f9 100%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header { padding: 28px 20px 16px; text-align: center; color: #fff; }
+  header .logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  header .tagline { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
+  .container { max-width: 420px; margin: 0 auto; padding: 0 16px 32px; }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 18px;
+    margin-top: 16px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--border);
+  }
+  .card h3 {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  input[type="text"], input:not([type]) {
+    width: 100%;
+    font-size: 15px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+    color: var(--text);
+  }
+  input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+  button {
+    font-size: 16px;
+    font-weight: 600;
+    padding: 14px 18px;
+    border-radius: 12px;
+    border: none;
+    color: #fff;
+    width: 100%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: transform 0.05s ease, opacity 0.15s ease;
+  }
+  button:active { transform: scale(0.98); opacity: 0.9; }
+  .btn-row { display: flex; flex-direction: column; gap: 10px; }
+  .btn-primary { background: var(--primary); }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-neutral { background: var(--neutral); }
+  .btn-ghost { background: #fff; color: var(--danger); border: 1px solid #fecaca; }
+  .btn-stop { background: #fff; color: var(--primary-dark); border: 1px solid #bfdbfe; display: none; }
+  .btn-stop.visible { display: flex; }
+  #status {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    min-height: 20px;
+  }
+  #status:empty::before { content: "버튼을 누르고 말씀해주세요."; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  /* 검토/수정 폼 */
+  #editForm { display: none; }
+  #editForm.visible { display: block; }
+  .field-group { margin-bottom: 14px; }
+  .field-group:last-child { margin-bottom: 0; }
+  .field-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .field-group textarea {
+    width: 100%;
+    font-size: 15px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+    color: var(--text);
+    resize: vertical;
+    min-height: 38px;
+    font-family: inherit;
+  }
+  .field-group textarea:focus { outline: 2px solid var(--primary); border-color: transparent; }
+  .section-divider {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 16px 0 8px;
+    font-weight: 700;
+  }
+  .section-divider:first-child { margin-top: 0; }
+  .locked-note { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 </style>
 </head>
 <body>
-  <h2>Banca Jarvis</h2>
+  <header>
+    <div class="logo">Banca Jarvis</div>
+    <div class="tagline">방카슈랑스 영업 보조 어시스턴트</div>
+  </header>
 
-  <input id="webAppUrl" placeholder="Apps Script 웹앱 URL을 여기에 붙여넣기" />
-  <br/>
+  <div class="container">
+    <div class="card">
+      <h3>연결 설정</h3>
+      <input id="webAppUrl" type="text" placeholder="Apps Script 웹앱 URL" />
+    </div>
 
-  <button id="recordBtn">🎤 정보 기록 (눌러서 말하기)</button>
-  <br/>
-  <button id="cancelBtn" style="background:#888;">❌ 녹음 취소</button>
-  <br/>
-  <button id="queryBtn">🏦 지점 조회 (지점명 말하기)</button>
+    <div class="card">
+      <h3>정보 기록</h3>
+      <div class="btn-row">
+        <button id="recordBtn" class="btn-primary">🎤 눌러서 말하기</button>
+        <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
+      </div>
+      <div class="hint">말이 끝나면 버튼을 다시 누르거나 "녹음 종료"라고 말하세요. 취소하려면 "녹음 취소".</div>
+    </div>
 
-  <div id="status"></div>
+    <div class="card" id="editCard" style="display:none;">
+      <h3>인식된 내용 확인 / 수정</h3>
+      <div id="editForm"></div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button id="commitBtn" class="btn-primary">✓ 이대로 저장</button>
+        <button id="discardBtn" class="btn-ghost">취소 (저장 안 함)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>지점 조회</h3>
+      <div class="btn-row">
+        <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
+        <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
+      </div>
+      <div class="hint">브리핑을 멈추려면 버튼을 누르거나 "오케이 여기까지"라고 말하세요.</div>
+    </div>
+
+    <div class="card">
+      <h3>상태</h3>
+      <div id="status"></div>
+    </div>
+  </div>
 
   <script>
     const statusEl = document.getElementById('status');
     const urlInput = document.getElementById('webAppUrl');
+    const stopListenBtn = document.getElementById('stopListenBtn');
+    const editCard = document.getElementById('editCard');
+    const editForm = document.getElementById('editForm');
     urlInput.value = localStorage.getItem('webAppUrl') || '';
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
 
+    function stripSymbols(text) {
+      return String(text || '')
+        .replace(/[#*_`>{}\[\]\\|~^]/g, '')
+        .replace(/^[\s-]+/gm, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = stripSymbols(text);
+    }
+
     function speak(text) {
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(stripSymbols(text));
       u.lang = 'ko-KR';
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+
+    // ===== 음성 기록 결과를 항목별로 화면에 보여주고, 수정 가능하게 함 =====
+    const FIELD_SECTIONS = [
+      { title: '기본 정보 (수정해도 시트의 은행/지점/판매자는 유지됩니다)', fields: [
+        ['은행명', '은행명'], ['지점명', '지점명'], ['판매자명', '판매자명'], ['직책', '직책']
+      ] },
+      { title: '판매자 특성', fields: [
+        ['가족관계', '가족관계'], ['자택', '자택'], ['판매성향', '판매성향']
+      ] },
+      { title: '대화 내용', fields: [
+        ['방문이력', '방문이력'], ['기타대화내용', '기타대화내용']
+      ] }
+    ];
+    const PROPOSAL_FIELDS = [
+      ['상품명', '상품명'], ['가입금액', '가입금액'], ['고객성명', '고객성명'], ['고객나이', '고객나이'], ['고객성별', '고객성별']
+    ];
+
+    let currentParsed = null;
+
+    function renderEditForm(parsed) {
+      currentParsed = parsed;
+      editForm.innerHTML = '';
+
+      FIELD_SECTIONS.forEach((section) => {
+        const div = document.createElement('div');
+        div.className = 'section-divider';
+        div.textContent = section.title;
+        editForm.appendChild(div);
+        section.fields.forEach(([key, label]) => {
+          editForm.appendChild(buildField(key, label, parsed[key] || ''));
+        });
+      });
+
+      const hasProposal = parsed.proposal_request && parsed.proposal_request['있음'];
+      const pDiv = document.createElement('div');
+      pDiv.className = 'section-divider';
+      pDiv.textContent = '제안서 요청' + (hasProposal ? '' : ' (감지되지 않음)');
+      editForm.appendChild(pDiv);
+      PROPOSAL_FIELDS.forEach(([key, label]) => {
+        const val = (parsed.proposal_request && parsed.proposal_request[key]) || '';
+        editForm.appendChild(buildField('proposal_' + key, label, val));
+      });
+
+      editCard.style.display = 'block';
+      editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      startEditAutoFlow();
+    }
+
+    // 수정 화면에서 "저장"/"취소"를 음성으로도 처리. 5분간 아무 동작 없으면 자동 저장.
+    const SAVE_PHRASES = ['이대로 저장', '저장해줘', '저장할게', '저장'];
+    const DISCARD_PHRASES = ['저장 취소', '취소해줘', '저장하지마', '취소'];
+    let editAutoTimer = null;
+    let editVoiceCleanup = null;
+
+    function stopEditAutoFlow() {
+      if (editAutoTimer) { clearTimeout(editAutoTimer); editAutoTimer = null; }
+      if (editVoiceCleanup) { editVoiceCleanup(); editVoiceCleanup = null; }
+    }
+
+    function startEditAutoFlow() {
+      stopEditAutoFlow();
+
+      editAutoTimer = setTimeout(() => {
+        if (editCard.style.display !== 'none') {
+          setStatus('5분간 응답이 없어 인식된 내용 그대로 저장합니다.');
+          document.getElementById('commitBtn').click();
+        }
+      }, 5 * 60 * 1000);
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+      let active = true;
+      const recog = new SpeechRecognition();
+      recog.lang = 'ko-KR';
+      recog.continuous = true;
+      recog.interimResults = false;
+      recog.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) continue;
+          const t = e.results[i][0].transcript;
+          if (DISCARD_PHRASES.some((p) => t.indexOf(p) !== -1)) {
+            document.getElementById('discardBtn').click();
+            return;
+          }
+          if (SAVE_PHRASES.some((p) => t.indexOf(p) !== -1)) {
+            document.getElementById('commitBtn').click();
+            return;
+          }
+        }
+      };
+      recog.onerror = () => {};
+      recog.onend = () => { if (active) { try { recog.start(); } catch (e) {} } };
+      try { recog.start(); } catch (e) {}
+      editVoiceCleanup = () => { active = false; try { recog.stop(); } catch (e) {} };
+    }
+
+    function buildField(key, label, value) {
+      const wrap = document.createElement('div');
+      wrap.className = 'field-group';
+      const labelEl = document.createElement('label');
+      labelEl.textContent = label;
+      const input = document.createElement('textarea');
+      input.id = 'field_' + key;
+      input.rows = 1;
+      input.value = stripSymbols(value);
+      input.addEventListener('input', () => {
+        input.rows = Math.min(6, Math.max(1, Math.ceil(input.value.length / 28)));
+      });
+      wrap.appendChild(labelEl);
+      wrap.appendChild(input);
+      return wrap;
+    }
+
+    function collectEditedData() {
+      const get = (key) => document.getElementById('field_' + key).value.trim();
+      const data = {
+        은행명: get('은행명'), 지점명: get('지점명'), 판매자명: get('판매자명'), 직책: get('직책'),
+        가족관계: get('가족관계'), 자택: get('자택'), 판매성향: get('판매성향'),
+        방문이력: get('방문이력'), 기타대화내용: get('기타대화내용'),
+        proposal_request: {
+          있음: !!(get('proposal_상품명') || get('proposal_고객성명')),
+          상품명: get('proposal_상품명'), 가입금액: get('proposal_가입금액'),
+          고객성명: get('proposal_고객성명'), 고객나이: get('proposal_고객나이'), 고객성별: get('proposal_고객성별')
+        }
+      };
+      return data;
+    }
+
+    function formatSaved(saved) {
+      if (!saved) return '';
+      const order = ['은행명', '지점명', '판매자명', '직책', '가족관계', '자택', '판매성향', '방문이력', '기타대화내용'];
+      const labels = order.filter((k) => saved[k]).map((k) => k + ': ' + stripSymbols(saved[k]));
+      if (saved.proposal_request && saved.proposal_request['있음']) {
+        labels.push('제안서 요청: 있음');
+        ['상품명', '가입금액', '고객성명', '고객나이', '고객성별'].forEach((k) => {
+          if (saved.proposal_request[k]) labels.push('  ' + k + ': ' + stripSymbols(saved.proposal_request[k]));
+        });
+      }
+      return labels.join('\n');
+    }
+
+    document.getElementById('commitBtn').onclick = () => {
+      stopEditAutoFlow();
+      const data = collectEditedData();
+      const url = urlInput.value.trim();
+      if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setStatus('저장 중...');
+      jsonpRequest(url, { action: 'commit', data: JSON.stringify(data) }, (res) => {
+        if (res.error) { setStatus('오류: ' + res.error); return; }
+        editCard.style.display = 'none';
+        setStatus('기록 완료\n\n' + formatSaved(res.saved));
+        speak('기록했습니다.');
+      });
+    };
+
+    document.getElementById('discardBtn').onclick = () => {
+      stopEditAutoFlow();
+      editCard.style.display = 'none';
+      setStatus('저장하지 않고 취소했습니다.');
+    };
+
+    const LISTEN_STOP_PHRASES = ['오케이 여기까지'];
+
+    function speakSummary(text) {
+      const clean = stripSymbols(text);
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let stopRec = null;
+      let active = true;
+
+      function cleanupAll() {
+        active = false;
+        stopListenBtn.classList.remove('visible');
+        if (stopRec) { try { stopRec.stop(); } catch (e) {} }
+      }
+
+      stopListenBtn.classList.add('visible');
+      stopListenBtn.onclick = () => { speechSynthesis.cancel(); cleanupAll(); };
+
+      if (SpeechRecognition) {
+        stopRec = new SpeechRecognition();
+        stopRec.lang = 'ko-KR';
+        stopRec.continuous = true;
+        stopRec.interimResults = false;
+        stopRec.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (!e.results[i].isFinal) continue;
+            const t = e.results[i][0].transcript;
+            if (LISTEN_STOP_PHRASES.some((p) => t.indexOf(p) !== -1)) {
+              speechSynthesis.cancel();
+              cleanupAll();
+              return;
+            }
+          }
+        };
+        stopRec.onerror = () => {};
+        stopRec.onend = () => { if (active) { try { stopRec.start(); } catch (e) {} } };
+        try { stopRec.start(); } catch (e) {}
+      }
+
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = 'ko-KR';
+      u.onend = cleanupAll;
+      u.onerror = cleanupAll;
+      speechSynthesis.cancel();
       speechSynthesis.speak(u);
     }
 
     const STOP_PHRASES = ['녹음 종료', '입력 종료', '기록 종료'];
     const CANCEL_PHRASES = ['녹음 취소', '입력 취소', '기록 취소'];
 
-    // 버튼을 눌러 시작, 다시 누르거나 "녹음 종료"라고 말하면 끝남.
-    // 짧은 침묵에도 끊기지 않도록 continuous 모드 + 끊기면 자동 재시작.
-    // "녹음 취소"라고 말하거나 취소 버튼을 누르면 지금까지 들은 내용은 전송하지 않고 버림.
     function createToggleRecorder(btn, onFinish) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        statusEl.textContent = '이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.';
+        setStatus('이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.');
         return { cancel: () => {} };
       }
 
@@ -93,8 +455,8 @@
         manualStop = false;
         cancelled = false;
         listening = true;
-        btn.textContent = '⏹ 종료 (다시 누르거나 "녹음 종료"라고 말하기)';
-        statusEl.textContent = '듣고 있습니다... (취소하려면 취소 버튼 또는 "녹음 취소"라고 말하세요)';
+        btn.textContent = '⏹ 종료 (다시 누르면 종료)';
+        setStatus('듣고 있습니다...');
 
         rec = new SpeechRecognition();
         rec.lang = 'ko-KR';
@@ -114,24 +476,24 @@
         };
 
         rec.onerror = (e) => {
-          if (e.error === 'no-speech') return; // 침묵은 무시하고 계속 듣기
-          statusEl.textContent = '인식 오류: ' + e.error;
+          if (e.error === 'no-speech') return;
+          setStatus('인식 오류: ' + e.error);
         };
 
         rec.onend = () => {
           if (!manualStop && listening) {
-            rec.start(); // 끊기면 자동 재시작 (계속 듣기)
+            rec.start();
             return;
           }
           listening = false;
           btn.textContent = defaultLabel;
           if (cancelled) {
-            statusEl.textContent = '녹음을 취소했습니다.';
+            setStatus('녹음을 취소했습니다.');
             return;
           }
           const fullText = chunks.join(' ').trim();
           if (fullText) onFinish(fullText);
-          else statusEl.textContent = '인식된 내용이 없습니다.';
+          else setStatus('인식된 내용이 없습니다.');
         };
 
         rec.start();
@@ -150,7 +512,7 @@
       const callbackName = 'jsonpCb' + (jsonpCounter++);
       const timeout = setTimeout(() => {
         cleanup();
-        statusEl.textContent = '오류: 응답 시간 초과 (URL 또는 배포 설정을 확인하세요)';
+        setStatus('오류: 응답 시간 초과 (URL 또는 배포 설정을 확인하세요)');
       }, 20000);
 
       function cleanup() {
@@ -164,32 +526,36 @@
       const qs = new URLSearchParams({ ...params, callback: callbackName }).toString();
       const script = document.createElement('script');
       script.src = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + qs;
-      script.onerror = () => { cleanup(); statusEl.textContent = '오류: 요청 실패 (URL을 확인하세요)'; };
+      script.onerror = () => { cleanup(); setStatus('오류: 요청 실패 (URL을 확인하세요)'); };
       document.body.appendChild(script);
     }
 
-    function send(action, text) {
+    function handleRecordTranscript(text) {
       const url = urlInput.value.trim();
-      if (!url) { statusEl.textContent = '먼저 Apps Script 웹앱 URL을 입력하세요.'; return; }
-      statusEl.textContent = '처리 중...\n"' + text + '"';
-      jsonpRequest(url, { action, text }, (data) => {
-        if (data.error) { statusEl.textContent = '오류: ' + data.error; return; }
-        if (action === 'record') {
-          statusEl.textContent = '기록 완료:\n' + JSON.stringify(data.saved, null, 2);
-          speak('기록했습니다.');
-        } else {
-          statusEl.textContent = data.summary;
-          speak(data.summary);
-        }
+      if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setStatus('인식 중...\n"' + text + '"');
+      jsonpRequest(url, { action: 'record', text }, (data) => {
+        if (data.error) { setStatus('오류: ' + data.error); return; }
+        setStatus('아래에서 내용을 확인하고 수정한 뒤 저장하세요.');
+        renderEditForm(data.parsed);
       });
     }
 
-    const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), (t) => send('record', t));
-    createToggleRecorder(document.getElementById('queryBtn'), (t) => send('query', t));
+    function handleQueryTranscript(text) {
+      const url = urlInput.value.trim();
+      if (!url) { setStatus('먼저 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      setStatus('조회 중...\n"' + text + '"');
+      jsonpRequest(url, { action: 'query', text }, (data) => {
+        if (data.error) { setStatus('오류: ' + data.error); return; }
+        setStatus(data.summary);
+        speakSummary(data.summary);
+      });
+    }
+
+    const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), handleRecordTranscript);
+    createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript);
     document.getElementById('cancelBtn').onclick = () => recordRecorder.cancel();
 
-    // URL에 ?autostart=record 또는 ?autostart=query를 붙여서 열면 자동으로 녹음 시작
-    // (구글 어시스턴트 루틴으로 "방카 자비스" 음성 명령 시 이 URL을 열도록 설정)
     const autostart = new URLSearchParams(location.search).get('autostart');
     if (autostart === 'record') document.getElementById('recordBtn').click();
     if (autostart === 'query') document.getElementById('queryBtn').click();
