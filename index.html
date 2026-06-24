@@ -718,24 +718,39 @@
       return { cancel, start };
     }
 
-    function buildEntryBriefSummary(e) {
-      const lead = ['은행명', '지점명', '판매자명', '직책'].map((k) => e[k]).filter(Boolean).join(' ');
+    function buildEntryExtra(e) {
       const extra = [];
       if (e['가족관계']) extra.push('가족관계는 ' + e['가족관계']);
       if (e['자택']) extra.push('자택은 ' + e['자택']);
       if (e['판매성향']) extra.push('판매성향은 ' + e['판매성향']);
       if (e['방문이력']) extra.push('방문이력은 ' + e['방문이력']);
       if (e['기타대화내용']) extra.push('기타로 ' + e['기타대화내용']);
-      let body = lead ? lead + '으로 인식했습니다.' : '내용을 인식했습니다.';
-      if (extra.length) body += ' ' + extra.join(', ') + '.';
-      else body += ' 별다른 내용 없이 날짜만 기록됩니다.';
-      return body;
+      return extra;
     }
 
+    // 내용이 있는 entry는 각각 풀어서 말하고, 내용 없이 은행+지점만 언급된 entry들은
+    // 한 번에 나열한 뒤 마지막에 "입력내용없어 날짜만 기록됩니다"를 한 번만 붙인다.
     function buildBriefSummary(parsed) {
       const entries = (parsed && parsed.entries) || [];
       if (entries.length === 0) return '인식된 내용이 없습니다.';
-      return entries.map(buildEntryBriefSummary).join(' ');
+
+      const parts = [];
+      const trivialLeads = [];
+      entries.forEach((e) => {
+        const lead = ['은행명', '지점명', '판매자명', '직책'].map((k) => e[k]).filter(Boolean).join(' ');
+        const extra = buildEntryExtra(e);
+        if (extra.length === 0) {
+          trivialLeads.push(lead || '내용');
+          return;
+        }
+        let body = lead ? lead + '으로 인식했습니다.' : '내용을 인식했습니다.';
+        body += ' ' + extra.join(', ') + '.';
+        parts.push(body);
+      });
+      if (trivialLeads.length) {
+        parts.push(trivialLeads.join(', ') + ' 입력내용없어 날짜만 기록됩니다.');
+      }
+      return parts.join(' ');
     }
 
     const CONFIRM_PHRASES = ['이상없어', '이상 없어', '맞아', '맞습니다', '맞어', '오케이', '저장', '괜찮아', '괜찮습니다', '응', '네'];
@@ -916,7 +931,10 @@
         data.visits.forEach((v) => {
           const div = document.createElement('div');
           div.className = 'visit-item';
-          div.textContent = stripSymbols(v.은행명 + ' ' + v.지점명 + ' - ' + v.판매자명 + (v.방문이력 ? ' (' + v.방문이력 + ')' : ''));
+          let line = v.은행명 + ' ' + v.지점명;
+          if (v.판매자명) line += ' - ' + v.판매자명;
+          if (v.방문이력) line += ' (' + v.방문이력 + ')';
+          div.textContent = stripSymbols(line);
           calendarResult.appendChild(div);
         });
       });
