@@ -211,6 +211,27 @@
   }
   .dash-stats { display: flex; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--muted); }
   .dash-bank-name { cursor: pointer; }
+  .dash-summary { margin-bottom: 16px; }
+  .dash-summary-numbers { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .dash-summary-item { text-align: center; flex: 1; }
+  .dash-summary-item .num { font-size: 22px; font-weight: 800; line-height: 1.1; }
+  .dash-summary-item .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .dash-summary-item.total .num { color: #1e293b; }
+  .dash-summary-item.visited .num { color: #16a34a; }
+  .dash-summary-item.unvisited .num { color: #dc2626; }
+  .dash-summary-track {
+    position: relative;
+    height: 10px;
+    border-radius: 6px;
+    background: #fee2e2;
+    overflow: hidden;
+  }
+  .dash-summary-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: #16a34a;
+    border-radius: 6px 0 0 6px;
+  }
+  .dash-summary-pct { text-align: right; font-size: 11px; color: var(--muted); margin-top: 4px; }
   .branch-detail { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
   .branch-chip { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
   .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
@@ -285,6 +306,7 @@
 
     <div class="card">
       <h3>이번 달 방문 현황</h3>
+      <div id="dashboardSummary" class="dash-summary"></div>
       <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:12px;">↻ 새로고침</button>
       <div id="dashboardList"></div>
       <div class="hint">모수는 판매자정보 시트 K열(영업대상)에 체크된 지점 기준으로 집계됩니다.</div>
@@ -957,15 +979,35 @@
 
     // ===================== 대시보드 (은행별 모수/당월방문/미방문) =====================
     const dashboardList = document.getElementById('dashboardList');
+    const dashboardSummary = document.getElementById('dashboardSummary');
+
+    function renderDashboardSummary(banks) {
+      const totals = banks.reduce((acc, b) => {
+        acc.모수 += b.모수; acc.당월방문 += b.당월방문; acc.미방문 += b.미방문;
+        return acc;
+      }, { 모수: 0, 당월방문: 0, 미방문: 0 });
+      const pct = totals.모수 > 0 ? Math.round((totals.당월방문 / totals.모수) * 100) : 0;
+
+      dashboardSummary.innerHTML =
+        '<div class="dash-summary-numbers">' +
+          '<div class="dash-summary-item total"><div class="num">' + totals.모수 + '</div><div class="lbl">총 모수</div></div>' +
+          '<div class="dash-summary-item visited"><div class="num">' + totals.당월방문 + '</div><div class="lbl">방문</div></div>' +
+          '<div class="dash-summary-item unvisited"><div class="num">' + totals.미방문 + '</div><div class="lbl">미방문</div></div>' +
+        '</div>' +
+        '<div class="dash-summary-track"><div class="dash-summary-fill" style="width:' + pct + '%;"></div></div>' +
+        '<div class="dash-summary-pct">' + pct + '% 진행</div>';
+    }
 
     function loadDashboard() {
       const url = urlInput.value.trim();
       if (!url) { dashboardList.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
+      dashboardSummary.innerHTML = '';
       dashboardList.textContent = '불러오는 중...';
       jsonpRequest(url, { action: 'dashboard' }, (data) => {
         if (data.error) { dashboardList.textContent = '오류: ' + data.error; return; }
         dashboardList.innerHTML = '';
         if (!data.banks || data.banks.length === 0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
+        renderDashboardSummary(data.banks);
         data.banks.forEach((b) => dashboardList.appendChild(buildDashboardBank(b)));
       });
     }
@@ -975,7 +1017,7 @@
       wrap.className = 'dash-bank';
       const name = document.createElement('div');
       name.className = 'dash-bank-name';
-      name.textContent = stripSymbols(b.은행명) + ' (눌러서 지점별 보기)';
+      name.textContent = stripSymbols(b.은행명);
       wrap.appendChild(name);
 
       const track = document.createElement('div');
