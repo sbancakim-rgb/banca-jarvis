@@ -308,7 +308,8 @@
       <h3>이번 달 방문 현황</h3>
       <div id="dashboardSummary" class="dash-summary"></div>
       <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:12px;">↻ 새로고침</button>
-      <div id="dashboardList"></div>
+      <button id="toggleDashboardListBtn" class="btn-neutral" style="margin-bottom:12px;">은행별 방문 현황 보기</button>
+      <div id="dashboardList" style="display:none;"></div>
       <div class="hint">모수는 판매자정보 시트 K열(영업대상)에 체크된 지점 기준으로 집계됩니다.</div>
     </div>
 
@@ -1067,6 +1068,13 @@
 
       return wrap;
     }
+
+    const toggleDashboardListBtn = document.getElementById('toggleDashboardListBtn');
+    toggleDashboardListBtn.onclick = () => {
+      const isHidden = dashboardList.style.display === 'none';
+      dashboardList.style.display = isHidden ? 'block' : 'none';
+      toggleDashboardListBtn.textContent = isHidden ? '은행별 방문 현황 숨기기' : '은행별 방문 현황 보기';
+    };
 
     document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
     loadDashboard();
