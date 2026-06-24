@@ -543,6 +543,22 @@
       return labels.join('\n');
     }
 
+    // handleCommit이 돌려주는 entry별 처리 결과(results)를 화면에 보여줄 텍스트로 정리
+    function formatSavedResults(results) {
+      if (!results || results.length === 0) return '';
+      return results.map((r) => {
+        const lead = [r.은행명, r.지점명, r.판매자명].filter(Boolean).join(' ') || '(은행/지점 불명확)';
+        if (r.error) return lead + ' - ' + r.error;
+        if (r.trivial) return lead + ' - 날짜만 기록됨';
+        const order = ['가족관계', '자택', '판매성향', '방문이력', '기타대화내용'];
+        const fields = order.filter((k) => r[k]).map((k) => '  ' + k + ': ' + stripSymbols(r[k]));
+        let line = lead;
+        if (fields.length) line += '\n' + fields.join('\n');
+        if (r.proposal_request && r.proposal_request['있음']) line += '\n  제안서 요청: 있음';
+        return line;
+      }).join('\n\n');
+    }
+
     document.getElementById('commitBtn').onclick = () => {
       stopEditAutoFlow();
       const data = collectEditedData();
@@ -702,17 +718,24 @@
       return { cancel, start };
     }
 
-    function buildBriefSummary(parsed) {
-      const lead = ['은행명', '지점명', '판매자명', '직책'].map((k) => parsed[k]).filter(Boolean).join(' ');
+    function buildEntryBriefSummary(e) {
+      const lead = ['은행명', '지점명', '판매자명', '직책'].map((k) => e[k]).filter(Boolean).join(' ');
       const extra = [];
-      if (parsed['가족관계']) extra.push('가족관계는 ' + parsed['가족관계']);
-      if (parsed['자택']) extra.push('자택은 ' + parsed['자택']);
-      if (parsed['판매성향']) extra.push('판매성향은 ' + parsed['판매성향']);
-      if (parsed['방문이력']) extra.push('방문이력은 ' + parsed['방문이력']);
-      if (parsed['기타대화내용']) extra.push('기타로 ' + parsed['기타대화내용']);
+      if (e['가족관계']) extra.push('가족관계는 ' + e['가족관계']);
+      if (e['자택']) extra.push('자택은 ' + e['자택']);
+      if (e['판매성향']) extra.push('판매성향은 ' + e['판매성향']);
+      if (e['방문이력']) extra.push('방문이력은 ' + e['방문이력']);
+      if (e['기타대화내용']) extra.push('기타로 ' + e['기타대화내용']);
       let body = lead ? lead + '으로 인식했습니다.' : '내용을 인식했습니다.';
       if (extra.length) body += ' ' + extra.join(', ') + '.';
+      else body += ' 별다른 내용 없이 날짜만 기록됩니다.';
       return body;
+    }
+
+    function buildBriefSummary(parsed) {
+      const entries = (parsed && parsed.entries) || [];
+      if (entries.length === 0) return '인식된 내용이 없습니다.';
+      return entries.map(buildEntryBriefSummary).join(' ');
     }
 
     const CONFIRM_PHRASES = ['이상없어', '이상 없어', '맞아', '맞습니다', '맞어', '오케이', '저장', '괜찮아', '괜찮습니다', '응', '네'];
@@ -764,7 +787,7 @@
       setRecordStatus('저장 중...');
       jsonpRequest(url, { action: 'commit', data: JSON.stringify(data) }, (res) => {
         if (res.error) { setRecordStatus('오류: ' + res.error); appState = 'idle'; resumeWakeListener(); return; }
-        setRecordStatus('기록 완료\n\n' + formatSaved(res.saved));
+        setRecordStatus('기록 완료\n\n' + formatSavedResults(res.results));
         speak('기록했습니다.');
         appState = 'idle';
         resumeWakeListener();
