@@ -34,7 +34,7 @@ gsutil cp ./내부문서/*.pdf gs://<internal_documents_bucket 출력값>/
 
 # 2) Vertex AI Search에 import 요청 (REST API 호출)
 PROJECT_ID="<project_id>"
-DATA_STORE_ID="internal-documents-v3"
+DATA_STORE_ID="internal-documents-v4"
 BUCKET="<internal_documents_bucket 출력값>"
 
 curl -X POST \
