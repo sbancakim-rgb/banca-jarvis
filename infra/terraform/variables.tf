@@ -31,11 +31,11 @@ variable "website_sources" {
     uri_pattern  = string
   }))
   default = {
-    "klia-disclosure-site" = {
+    "klia-disclosure-site-v2" = {
       display_name = "생명보험협회 공시실"
       uri_pattern  = "pub.insure.or.kr/*"
     }
-    "fss-standard-terms-site" = {
+    "fss-standard-terms-site-v2" = {
       display_name = "금융감독원 표준약관"
       uri_pattern  = "fss.or.kr/fss/bbs/B0000115/*"
     }

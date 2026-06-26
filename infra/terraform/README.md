@@ -62,8 +62,8 @@ curl -X POST \
 
 ```hcl
 website_sources = {
-  "klia-disclosure-site"     = { display_name = "생명보험협회 공시실",   uri_pattern = "pub.insure.or.kr/*" }
-  "fss-standard-terms-site"  = { display_name = "금융감독원 표준약관",   uri_pattern = "fss.or.kr/fss/bbs/B0000115/*" }
+  "klia-disclosure-site-v2"     = { display_name = "생명보험협회 공시실",   uri_pattern = "pub.insure.or.kr/*" }
+  "fss-standard-terms-site-v2"  = { display_name = "금융감독원 표준약관",   uri_pattern = "fss.or.kr/fss/bbs/B0000115/*" }
   "law-go-kr-income-tax"     = { display_name = "국가법령정보센터 소득세법", uri_pattern = "law.go.kr/lsInfoP.do*" }
 }
 ```
