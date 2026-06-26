@@ -10,5 +10,14 @@ resource "google_discovery_engine_data_store" "internal_documents" {
   content_config   = "CONTENT_REQUIRED"
   solution_types   = ["SOLUTION_TYPE_SEARCH"]
 
+  # GCP가 생성 후 이 블록을 기본값으로 채워서 돌려주는데, 선언을 안 해두면 Terraform이
+  # "설정에서 제거됨"으로 보고 매 plan마다 강제 재생성(replace)을 일으킴
+  # (datastore_website.tf의 advanced_site_search_config와 동일한 패턴).
+  document_processing_config {
+    default_parsing_config {
+      digital_parsing_config {}
+    }
+  }
+
   depends_on = [google_project_service.apis]
 }
