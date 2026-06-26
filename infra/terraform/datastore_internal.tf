@@ -4,7 +4,7 @@
 resource "google_discovery_engine_data_store" "internal_documents" {
   project          = var.project_id
   location         = var.discovery_location
-  data_store_id    = "internal-documents-v2"
+  data_store_id    = "internal-documents-v3"
   display_name     = "내부 업무자료 (약관/매뉴얼/세법)"
   industry_vertical = "GENERIC"
   content_config   = "CONTENT_REQUIRED"
