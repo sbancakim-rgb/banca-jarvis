@@ -56,6 +56,8 @@ curl -X POST \
 
 웹사이트 데이터스토어는 생성 후 별도 조치 없이 자동으로 초기 크롤링을 시작한다 (완료까지 수 시간~1일 소요 가능). 이후 Vertex AI Search가 best-effort로 주기적 재크롤링하여 새 글/개정된 약관을 자동으로 반영한다.
 
+웹사이트 데이터스토어는 검색 앱에 묶기 위해 Advanced Site Search로 생성된다 (Basic Site Search는 검색 엔진에 추가할 수 없는 GCP 제약사항). Advanced Site Search는 일반 데이터스토어보다 비용이 더 든다.
+
 새 출처를 추가하려면 `variables.tf`의 `website_sources` 맵에 항목을 추가하고 `terraform apply`만 다시 실행하면 된다:
 
 ```hcl

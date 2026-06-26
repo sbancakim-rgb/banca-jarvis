@@ -12,7 +12,9 @@ resource "google_discovery_engine_data_store" "website" {
   content_config   = "PUBLIC_WEBSITE"
   solution_types   = ["SOLUTION_TYPE_SEARCH"]
 
-  create_advanced_site_search = false
+  # 검색 엔진(앱)에 묶으려면 Advanced Site Search가 필수 (Basic Site Search 데이터스토어는
+  # google_discovery_engine_search_engine에 추가할 수 없음 — GCP 제약사항).
+  create_advanced_site_search = true
 
   depends_on = [google_project_service.apis]
 }
