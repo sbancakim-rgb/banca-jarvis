@@ -17,5 +17,7 @@ resource "google_discovery_engine_search_engine" "knowledge_search" {
 
   search_engine_config {
     search_add_ons = ["SEARCH_ADD_ON_LLM"]
+    # Advanced Site Search 데이터스토어(웹사이트 출처)를 묶으려면 Enterprise tier 필수.
+    search_tier    = "SEARCH_TIER_ENTERPRISE"
   }
 }
