@@ -16,6 +16,13 @@ resource "google_discovery_engine_data_store" "website" {
   # google_discovery_engine_search_engine에 추가할 수 없음 — GCP 제약사항).
   create_advanced_site_search = true
 
+  # GCP가 생성 후 이 블록을 기본값으로 채워서 돌려주는데, 선언을 안 해두면 Terraform이
+  # "설정에서 제거됨"으로 보고 매 plan마다 강제 재생성(replace)을 일으킴.
+  advanced_site_search_config {
+    disable_automatic_refresh = false
+    disable_initial_index     = false
+  }
+
   depends_on = [google_project_service.apis]
 }
 
