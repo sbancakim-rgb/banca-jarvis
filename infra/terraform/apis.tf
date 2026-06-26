@@ -2,6 +2,11 @@ locals {
   required_apis = [
     "discoveryengine.googleapis.com",
     "storage.googleapis.com",
+    "firestore.googleapis.com",
+    "aiplatform.googleapis.com",
+    "run.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "artifactregistry.googleapis.com",
   ]
 }
 

@@ -17,3 +17,8 @@ output "engine_id" {
   value       = google_discovery_engine_search_engine.knowledge_search.engine_id
   description = "Vertex AI Search 콘솔에서 확인/테스트할 검색 앱(엔진) ID"
 }
+
+output "search_api_service_account_email" {
+  value       = google_service_account.search_api.email
+  description = "/api/search Cloud Run 서비스 배포 시 --service-account로 지정할 서비스 계정"
+}
