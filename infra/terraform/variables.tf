@@ -39,6 +39,18 @@ variable "website_sources" {
       display_name = "금융감독원 표준약관"
       uri_pattern  = "fss.or.kr/fss/bbs/B0000115/*"
     }
+    "law-go-kr-income-tax" = {
+      display_name = "국가법령정보센터 소득세법"
+      uri_pattern  = "law.go.kr/lsInfoP.do?lsiSeq=188543*"
+    }
+    "law-go-kr-corporate-tax" = {
+      display_name = "국가법령정보센터 법인세법"
+      uri_pattern  = "law.go.kr/lsInfoP.do?lsiSeq=199738*"
+    }
+    "law-go-kr-inheritance-gift-tax" = {
+      display_name = "국가법령정보센터 상속세 및 증여세법"
+      uri_pattern  = "law.go.kr/lsInfoP.do?lsiSeq=109453*"
+    }
   }
   description = "자동 크롤링할 공개 웹사이트 출처 목록. data_store_id => { 표시이름, URL 패턴 }. 새 출처를 추가하려면 이 맵에 항목을 더하면 됨"
 }

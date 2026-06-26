@@ -62,11 +62,17 @@ curl -X POST \
 
 ```hcl
 website_sources = {
-  "klia-disclosure-site-v2"     = { display_name = "생명보험협회 공시실",   uri_pattern = "pub.insure.or.kr/*" }
-  "fss-standard-terms-site-v2"  = { display_name = "금융감독원 표준약관",   uri_pattern = "fss.or.kr/fss/bbs/B0000115/*" }
-  "law-go-kr-income-tax"     = { display_name = "국가법령정보센터 소득세법", uri_pattern = "law.go.kr/lsInfoP.do*" }
+  "klia-disclosure-site-v2"        = { display_name = "생명보험협회 공시실",        uri_pattern = "pub.insure.or.kr/*" }
+  "fss-standard-terms-site-v2"     = { display_name = "금융감독원 표준약관",        uri_pattern = "fss.or.kr/fss/bbs/B0000115/*" }
+  "law-go-kr-income-tax"           = { display_name = "국가법령정보센터 소득세법",       uri_pattern = "law.go.kr/lsInfoP.do?lsiSeq=188543*" }
+  "law-go-kr-corporate-tax"        = { display_name = "국가법령정보센터 법인세법",       uri_pattern = "law.go.kr/lsInfoP.do?lsiSeq=199738*" }
+  "law-go-kr-inheritance-gift-tax" = { display_name = "국가법령정보센터 상속세 및 증여세법", uri_pattern = "law.go.kr/lsInfoP.do?lsiSeq=109453*" }
 }
 ```
+
+> ⚠️ `law.go.kr`의 모든 법령은 `lsInfoP.do?lsiSeq=<숫자ID>` 형태의 동일한 경로를 쓰고, 법령명이 아니라 이 숫자ID로만 구분된다. 그래서 `law.go.kr/lsInfoP.do*` 같은 와일드카드 패턴을 쓰면 의도한 법령 하나가 아니라 **사이트 전체의 모든 법령(수만 페이지)**이 크롤링 대상이 되어 색인 비용이 크게 늘고 검색 결과에 무관한 법령까지 섞여 들어온다. 따라서 특정 법령만 원하면 위처럼 `lsiSeq` 값을 정확히 지정한 패턴을 써야 한다.
+>
+> 위 3개 법령의 `lsiSeq` 값은 검색을 통해 찾은 것으로, **실제 해당 법령의 현행 본문 페이지가 맞는지 브라우저로 직접 열어서 한 번 확인**해야 한다 (`https://www.law.go.kr/lsInfoP.do?lsiSeq=<값>` 로 접속해 페이지 상단의 법령명·시행 상태 확인). 법이 개정되면 이 ID가 바뀔 수 있으므로, 추후 검색이 안 되면 이 값을 다시 확인해서 갱신해야 한다.
 
 ## 4. 동작 확인
 
