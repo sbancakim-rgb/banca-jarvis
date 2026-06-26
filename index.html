@@ -755,8 +755,17 @@
 
     const CONFIRM_PHRASES = ['이상없어', '이상 없어', '맞아', '맞습니다', '맞어', '오케이', '저장', '괜찮아', '괜찮습니다', '응', '네'];
     const EDIT_TRIGGER_PHRASES = ['수정', '정정', '다시'];
+    const CANCEL_PHRASES = ['취소'];
 
-    // AI가 말하는 도중이라도 "맞아/저장/수정" 등을 바로 말하면 끼어들어 처리됨 (말이 끝날 때까지 안 기다려도 됨)
+    // 확인/수정 단계에서도 "취소"를 말하거나 취소 버튼을 누르면 즉시 입력을 강제 종료할 수 있도록,
+    // 현재 진행 중인 speakThenListen을 중단시키는 함수를 여기에 등록해둔다.
+    let recordFlowAbort = null;
+
+    function cancelRecordFlow() {
+      if (recordFlowAbort) { const fn = recordFlowAbort; recordFlowAbort = null; fn(); }
+    }
+
+    // AI가 말하는 도중이라도 "맞아/저장/수정/취소" 등을 바로 말하면 끼어들어 처리됨 (말이 끝날 때까지 안 기다려도 됨)
     function speakThenListen(message, onResult) {
       setRecordStatus(message);
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -768,10 +777,13 @@
       function finishOnce(text) {
         if (done) return;
         done = true;
+        recordFlowAbort = null;
         speechSynthesis.cancel();
         if (rec) { try { rec.onend = null; rec.abort(); } catch (e) {} }
         onResult(text);
       }
+
+      recordFlowAbort = () => finishOnce('취소');
 
       if (SpeechRecognition) {
         rec = new SpeechRecognition();
@@ -796,6 +808,15 @@
       speechSynthesis.speak(u);
     }
 
+    // 음성 "취소" 또는 취소 버튼으로 호출됨: 저장하지 않고 입력 플로우를 즉시 끝낸다.
+    function abortRecordFlow() {
+      speechSynthesis.cancel();
+      setRecordStatus('취소했습니다. 저장하지 않았습니다.');
+      speak('취소했습니다.');
+      appState = 'idle';
+      resumeWakeListener();
+    }
+
     function commitParsedData(data) {
       const url = urlInput.value.trim();
       if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
@@ -811,14 +832,22 @@
 
     // 음성으로만 끝까지 확인: 요약을 들려주고 "맞아/저장"이면 바로 저장, "수정/정정/다시"면 정정 내용을 다시 듣고 반영한 뒤 또 확인.
     function confirmLoop(originalTranscript, parsed) {
-      const msg = buildBriefSummary(parsed) + ' 이상 없으면 맞아 또는 저장이라고 말씀해주시고, 고칠 부분이 있으면 수정이라고 말씀해주세요.';
+      const msg = buildBriefSummary(parsed) + ' 이상 없으면 맞아 또는 저장이라고 말씀해주시고, 고칠 부분이 있으면 수정, 그만하시려면 취소라고 말씀해주세요.';
       speakThenListen(msg, (responseText) => {
+        if (CANCEL_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
+          abortRecordFlow();
+          return;
+        }
         if (CONFIRM_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
           commitParsedData(parsed);
           return;
         }
         if (EDIT_TRIGGER_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
           speakThenListen('수정할 내용을 말씀해주세요.', (correctionText) => {
+            if (CANCEL_PHRASES.some((p) => correctionText.indexOf(p) !== -1)) {
+              abortRecordFlow();
+              return;
+            }
             const url = urlInput.value.trim();
             setRecordStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
             jsonpRequest(url, { action: 'reparse', original: originalTranscript, correction: correctionText }, (data2) => {
@@ -868,7 +897,10 @@
       stateName: 'querying',
       listeningLabel: '⏹ 브리핑 (다시 누르면 종료)'
     });
-    document.getElementById('cancelBtn').onclick = () => recordRecorder.cancel();
+    document.getElementById('cancelBtn').onclick = () => {
+      recordRecorder.cancel(); // 녹음 중이면 그 단계에서 취소됨
+      cancelRecordFlow(); // 확인/수정 단계(speakThenListen 중)면 거기서 취소됨
+    };
 
     const autostart = new URLSearchParams(location.search).get('autostart');
     if (autostart === 'record') document.getElementById('recordBtn').click();
