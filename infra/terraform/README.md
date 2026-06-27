@@ -3,7 +3,8 @@
 이 Terraform 코드는 방카슈랑스 지식검색 시스템의 검색 데이터 레이어를 만든다:
 
 - **내부 문서 데이터스토어** (`internal-documents`): 회사 내부의 상품약관/업무매뉴얼/세법자료 PDF 등을 보관할 Cloud Storage 버킷 + 이를 색인할 Vertex AI Search 데이터스토어
-- **웹사이트 데이터스토어** (`website_sources` 변수로 관리): 생명보험협회 공시실, 금융감독원 표준약관처럼 외부에 공개된 자료를 자동으로 주기적 재크롤링하는 데이터스토어
+- **웹사이트 데이터스토어** (`website_sources` 변수로 관리): 생명보험협회 공시실, 금융감독원 표준약관처럼 외부에 공개된 자료를 자동으로 주기적 재크롤링하는 데이터스토어. ⚠️ 도메인 소유권 인증이 필요해서 현재 동작하지 않음 (3번 참고)
+- **외부 공개자료 직접수집 데이터스토어** (`external-snapshots-v1`): law.go.kr처럼 도메인 인증이 불가능한 외부 사이트를 위해, 우리가 직접 가져와 저장한 사본을 색인하는 데이터스토어 (4번 참고)
 - **검색 엔진** (`banca-knowledge-search`): 위 데이터스토어들을 묶어 하나의 검색 앱으로 노출. 생성형 답변(LLM) 기능 포함
 
 ## 0. 사전 준비 (콘솔에서 직접)
@@ -54,29 +55,42 @@ curl -X POST \
 
 ## 3. 웹사이트 자동 크롤링 확인
 
-웹사이트 데이터스토어는 생성 후 별도 조치 없이 자동으로 초기 크롤링을 시작한다 (완료까지 수 시간~1일 소요 가능). 이후 Vertex AI Search가 best-effort로 주기적 재크롤링하여 새 글/개정된 약관을 자동으로 반영한다.
+> ⚠️ **현재 알려진 한계: 아래 Advanced Site Search 방식은 본인이 소유하지 않은 도메인에는 동작하지 않는다.** Advanced Site Search는 GCP 정책상 Google Search Console로 도메인 소유권을 인증해야 색인이 시작되는데, `pub.insure.or.kr`(생명보험협회)·`fss.or.kr`(금융감독원)은 우리 회사 소유 도메인이 아니라서 인증이 불가능하다. 실제로 콘솔에서 두 데이터스토어 모두 "도메인이 확인되지 않았습니다. 색인 생성을 시작할 수 없습니다"로 표시되어 색인이 진행되지 않고 있다 (2026-06-26 확인). 우회 방법으로 "도메인 연결(domain association)" 요청을 그 기관에 보내 승인받는 방법이 있으나, 일반 기업이 금융감독원/생명보험협회로부터 이런 승인을 받기는 현실적으로 어렵다. 해결되기 전까지 이 2개 출처는 검색 결과에 반영되지 않는다 — 후속 작업으로 `fetcher/`와 같은 직접수집 방식으로 전환하는 게 필요하다 (아래 4번 참고).
+
+웹사이트 데이터스토어는 생성 후 별도 조치 없이 자동으로 초기 크롤링을 시작한다 (도메인 인증이 된 경우에 한해 완료까지 수 시간~1일 소요 가능). 이후 Vertex AI Search가 best-effort로 주기적 재크롤링하여 새 글/개정된 약관을 자동으로 반영한다.
 
 웹사이트 데이터스토어는 검색 앱에 묶기 위해 Advanced Site Search로 생성된다 (Basic Site Search는 검색 엔진에 추가할 수 없는 GCP 제약사항). Advanced Site Search는 일반 데이터스토어보다 비용이 더 든다.
 
-새 출처를 추가하려면 `variables.tf`의 `website_sources` 맵에 항목을 추가하고 `terraform apply`만 다시 실행하면 된다:
+새 출처를 추가하려면 `variables.tf`의 `website_sources` 맵에 항목을 추가하고 `terraform apply`만 다시 실행하면 된다 — **단, 본인(회사)이 도메인 소유권을 인증할 수 있는 사이트에만 쓸 것:**
 
 ```hcl
 website_sources = {
-  "klia-disclosure-site-v2"        = { display_name = "생명보험협회 공시실",        uri_pattern = "pub.insure.or.kr/*" }
-  "fss-standard-terms-site-v2"     = { display_name = "금융감독원 표준약관",        uri_pattern = "fss.or.kr/fss/bbs/B0000115/*" }
-  "law-go-kr-income-tax"           = { display_name = "국가법령정보센터 소득세법",       uri_pattern = "law.go.kr/lsInfoP.do?lsiSeq=188543*" }
-  "law-go-kr-corporate-tax"        = { display_name = "국가법령정보센터 법인세법",       uri_pattern = "law.go.kr/lsInfoP.do?lsiSeq=199738*" }
-  "law-go-kr-inheritance-gift-tax" = { display_name = "국가법령정보센터 상속세 및 증여세법", uri_pattern = "law.go.kr/lsInfoP.do?lsiSeq=109453*" }
+  "klia-disclosure-site-v2"    = { display_name = "생명보험협회 공시실",    uri_pattern = "pub.insure.or.kr/*" }
+  "fss-standard-terms-site-v2" = { display_name = "금융감독원 표준약관",    uri_pattern = "fss.or.kr/fss/bbs/B0000115/*" }
 }
 ```
 
-> ⚠️ `law.go.kr`의 모든 법령은 `lsInfoP.do?lsiSeq=<숫자ID>` 형태의 동일한 경로를 쓰고, 법령명이 아니라 이 숫자ID로만 구분된다. 그래서 `law.go.kr/lsInfoP.do*` 같은 와일드카드 패턴을 쓰면 의도한 법령 하나가 아니라 **사이트 전체의 모든 법령(수만 페이지)**이 크롤링 대상이 되어 색인 비용이 크게 늘고 검색 결과에 무관한 법령까지 섞여 들어온다. 따라서 특정 법령만 원하면 위처럼 `lsiSeq` 값을 정확히 지정한 패턴을 써야 한다.
->
-> 위 3개 법령의 `lsiSeq` 값은 검색을 통해 찾은 것으로, **실제 해당 법령의 현행 본문 페이지가 맞는지 브라우저로 직접 열어서 한 번 확인**해야 한다 (`https://www.law.go.kr/lsInfoP.do?lsiSeq=<값>` 로 접속해 페이지 상단의 법령명·시행 상태 확인). 법이 개정되면 이 ID가 바뀔 수 있으므로, 추후 검색이 안 되면 이 값을 다시 확인해서 갱신해야 한다.
->
-> 이 ID는 자동으로 갱신되지 않으므로(현재는 수동 확인 방식으로 운영하기로 함), **매년 세법 개정 시기(보통 12월~1월)에 한 번씩** law.go.kr에서 위 3개 법령의 현재 `lsiSeq` 값을 확인하고, 바뀌었다면 이 맵의 `uri_pattern`을 갱신 후 `terraform apply`로 반영하는 것을 권장한다.
+## 4. 외부 공개자료 직접수집 (법제처 3개 법령)
 
-## 4. 동작 확인
+`law.go.kr`(국가법령정보센터)도 위와 같은 도메인 인증 문제가 있어서, 3번의 Advanced Site Search 방식이 아니라 **우리가 주기적으로 직접 가져와서(fetch) 색인하는 별도 파이프라인**으로 처리한다 (`fetch_pipeline.tf` + 저장소 루트의 `fetcher/` 디렉터리). 배포 방법은 `fetcher/README.md` 참고.
+
+대상 법령 목록은 `variables.tf`의 `law_go_kr_sources` 맵으로 관리한다:
+
+```hcl
+law_go_kr_sources = {
+  "law-go-kr-income-tax"           = { display_name = "소득세법",          url = "https://www.law.go.kr/lsInfoP.do?lsiSeq=188543" }
+  "law-go-kr-corporate-tax"        = { display_name = "법인세법",          url = "https://www.law.go.kr/lsInfoP.do?lsiSeq=199738" }
+  "law-go-kr-inheritance-gift-tax" = { display_name = "상속세 및 증여세법", url = "https://www.law.go.kr/lsInfoP.do?lsiSeq=109453" }
+}
+```
+
+> ⚠️ `lsiSeq` 값은 검색을 통해 찾은 것으로, **실제 해당 법령의 현행 본문 페이지가 맞는지 브라우저로 직접 열어서 한 번 확인**해야 한다 (`https://www.law.go.kr/lsInfoP.do?lsiSeq=<값>` 로 접속해 페이지 상단의 법령명·시행 상태 확인). 법이 개정되면 이 ID가 바뀔 수 있다.
+>
+> 이 ID는 자동으로 갱신되지 않으므로(현재는 수동 확인 방식으로 운영하기로 함), **매년 세법 개정 시기(보통 12월~1월)에 한 번씩** law.go.kr에서 위 3개 법령의 현재 `lsiSeq` 값을 확인하고, 바뀌었다면 이 맵의 `url`과 `fetcher/main.py`의 `DEFAULT_LAW_SOURCES`를 같이 갱신한 뒤 `terraform apply` + fetcher 재배포로 반영하는 것을 권장한다.
+>
+> ⚠️ law.go.kr이 이 fetcher의 요청 자체를 차단할 가능성도 배제할 수 없다 (이 환경에서 law.go.kr을 직접 열어봤을 때 한 번 차단된 적이 있음). 실제로 가져와지는지는 `fetcher/README.md`의 수동 테스트 단계에서 반드시 확인할 것.
+
+## 5. 동작 확인
 
 GCP 콘솔 > Vertex AI Search > Apps 에서 `banca-knowledge-search` 앱을 열고 "미리보기"로 질문을 입력해 검색/답변이 잘 나오는지 확인한다.
 

@@ -7,6 +7,7 @@ locals {
     "run.googleapis.com",
     "cloudbuild.googleapis.com",
     "artifactregistry.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ]
 }
 

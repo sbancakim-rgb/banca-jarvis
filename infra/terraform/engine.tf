@@ -8,6 +8,7 @@ resource "google_discovery_engine_search_engine" "knowledge_search" {
 
   data_store_ids = concat(
     [google_discovery_engine_data_store.internal_documents.data_store_id],
+    [google_discovery_engine_data_store.external_snapshots.data_store_id],
     [for k, v in google_discovery_engine_data_store.website : v.data_store_id]
   )
 
