@@ -2,11 +2,13 @@ import json
 import math
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask, jsonify, request
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.cloud import firestore
+from google.cloud import storage
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
@@ -19,8 +21,20 @@ CLICK_WINDOW_DAYS = int(os.environ.get("CLICK_WINDOW_DAYS", "30"))
 POPULAR_SEARCH_LIMIT = int(os.environ.get("POPULAR_SEARCH_LIMIT", "8"))
 CLICK_BOOST_WEIGHT = float(os.environ.get("CLICK_BOOST_WEIGHT", "5"))
 
+# 내부문서/직접수집 데이터스토어 ID. 출처 배지("내부 자료" vs "외부 공개자료")를
+# 결정하는 데 쓴다 — infra/terraform의 datastore_internal.tf, fetch_pipeline.tf와 ID를 맞출 것.
+INTERNAL_DATA_STORE_ID = os.environ.get("INTERNAL_DATA_STORE_ID", "internal-documents-v4")
+EXTERNAL_SNAPSHOT_DATA_STORE_ID = os.environ.get("EXTERNAL_SNAPSHOT_DATA_STORE_ID", "external-snapshots-v1")
+
+LAST_REVISED_NOTE = "원문 발행일/최종 개정일은 자동으로 추출되지 않습니다 — 원문 링크에서 직접 확인하세요."
+AI_DISCLAIMER = "위 분류와 제목은 AI가 자동 생성한 것으로 부정확할 수 있습니다. 실제 적용 시 원문 약관/법령을 반드시 확인하세요."
+
+GCS_URI_RE = re.compile(r"^gs://([^/]+)/(.+)$")
+DATA_STORE_ID_RE = re.compile(r"/dataStores/([^/]+)/")
+
 app = Flask(__name__)
 db = firestore.Client(project=PROJECT_ID)
+storage_client = storage.Client(project=PROJECT_ID)
 vertexai.init(project=PROJECT_ID, location=REGION)
 search_client = discoveryengine.SearchServiceClient()
 
@@ -50,15 +64,23 @@ def search_documents(query: str, page_size: int = 20):
     )
     response = search_client.search(req)
 
-    results = []
+    raw_results = []
     for r in response.results:
         struct = dict(r.document.derived_struct_data.items()) if r.document.derived_struct_data else {}
+        raw_results.append((r.document.name, r.document.id, struct))
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        sources = list(pool.map(lambda item: _build_source_info(item[0], item[2]), raw_results))
+
+    results = []
+    for (doc_name, doc_id, struct), source in zip(raw_results, sources):
         results.append(
             {
-                "docId": r.document.id,
-                "title": struct.get("title") or struct.get("htmlTitle") or r.document.id,
+                "docId": doc_id,
+                "title": struct.get("title") or struct.get("htmlTitle") or doc_id,
                 "link": struct.get("link", ""),
                 "snippet": _extract_snippet(struct),
+                "source": source,
             }
         )
     return results
@@ -69,6 +91,63 @@ def _extract_snippet(struct: dict) -> str:
     if snippets:
         return snippets[0].get("snippet", "")
     return ""
+
+
+def _parse_gcs_uri(uri: str):
+    match = GCS_URI_RE.match(uri or "")
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _data_store_id_from_name(document_name: str) -> str:
+    match = DATA_STORE_ID_RE.search(document_name or "")
+    return match.group(1) if match else ""
+
+
+def _fetch_gcs_object_info(bucket_name: str, object_name: str) -> dict:
+    try:
+        blob = storage_client.bucket(bucket_name).get_blob(object_name)
+        if blob is None:
+            return {}
+        return {
+            "updated": blob.updated.isoformat() if blob.updated else None,
+            "customMetadata": blob.metadata or {},
+        }
+    except Exception:
+        return {}
+
+
+def _build_source_info(document_name: str, struct: dict) -> dict:
+    data_store_id = _data_store_id_from_name(document_name)
+    if data_store_id == INTERNAL_DATA_STORE_ID:
+        source_type, label = "internal", "내부 자료"
+    elif data_store_id == EXTERNAL_SNAPSHOT_DATA_STORE_ID:
+        source_type, label = "external_snapshot", "외부 공개자료 (직접수집 사본)"
+    else:
+        source_type, label = "external_website", "외부 웹사이트"
+
+    link = struct.get("link", "")
+    collected_at = None
+
+    parsed = _parse_gcs_uri(link)
+    if parsed:
+        bucket_name, object_name = parsed
+        gcs_info = _fetch_gcs_object_info(bucket_name, object_name)
+        custom_metadata = gcs_info.get("customMetadata", {})
+        link = custom_metadata.get("sourceUrl") or (
+            f"https://console.cloud.google.com/storage/browser/_details/{bucket_name}/{object_name}"
+            f"?project={PROJECT_ID}"
+        )
+        collected_at = custom_metadata.get("collectedAt") or gcs_info.get("updated")
+
+    return {
+        "type": source_type,
+        "label": label,
+        "link": link,
+        "collectedAt": collected_at,
+        "lastRevisedNote": LAST_REVISED_NOTE,
+    }
 
 
 def cluster_with_gemini(query: str, results: list) -> list:
@@ -182,6 +261,7 @@ def api_search():
             "query": query,
             "topics": topics,
             "popularSearches": get_popular_searches(),
+            "disclaimer": AI_DISCLAIMER,
         }
     )
 

@@ -47,15 +47,39 @@ terraform output search_api_service_account_email
       "primaryDocId": "...",
       "clickCount": 3,
       "items": [
-        { "docId": "...", "title": "...", "link": "...", "snippet": "..." }
+        {
+          "docId": "...",
+          "title": "...",
+          "link": "...",
+          "snippet": "...",
+          "source": {
+            "type": "internal",
+            "label": "내부 자료",
+            "link": "https://console.cloud.google.com/storage/browser/_details/<bucket>/<object>?project=<project_id>",
+            "collectedAt": "2026-06-20T01:23:45.000000+00:00",
+            "lastRevisedNote": "원문 발행일/최종 개정일은 자동으로 추출되지 않습니다 — 원문 링크에서 직접 확인하세요."
+          }
+        }
       ]
     }
   ],
-  "popularSearches": ["비과세", "실손보험 갱신", "..."]
+  "popularSearches": ["비과세", "실손보험 갱신", "..."],
+  "disclaimer": "위 분류와 제목은 AI가 자동 생성한 것으로 부정확할 수 있습니다. 실제 적용 시 원문 약관/법령을 반드시 확인하세요."
 }
 ```
 
-프론트엔드는 처음에는 `topics[].title` 목록만 보여주고, 클릭하면 해당 `items`를 펼쳐서 보여주면 된다. `popularSearches`는 검색창 아래 추천 검색어로 그대로 노출.
+프론트엔드는 처음에는 `topics[].title` 목록만 보여주고, 클릭하면 해당 `items`를 펼쳐서 보여주면 된다. `popularSearches`는 검색창 아래 추천 검색어로 그대로 노출. `disclaimer`는 AI 답변/분류 하단에 항상 표시해야 한다 (infra/terraform/README.md의 출처 정보 요구사항 5번).
+
+#### `items[].source` 필드
+
+각 결과 항목의 출처를 화면에 표시하기 위한 정보 (infra/terraform/README.md의 출처 정보 요구사항 1~4번 대응):
+
+- `type` / `label`: 결과가 어느 데이터스토어에서 왔는지에 따라 자동 분류됨 — `internal`("내부 자료"), `external_snapshot`("외부 공개자료 (직접수집 사본)" — law.go.kr 등 fetcher가 가져온 사본), `external_website`("외부 웹사이트" — 향후 생명보험협회/금감원 Advanced Site Search가 동작하면 해당).
+- `link`: 원문으로 이동할 링크. 내부 PDF는 공개 URL이 없으므로 GCP 콘솔의 객체 상세 페이지 링크로 대체(사내 직원만 접근 가능, GCP 콘솔 권한 필요). fetcher가 수집한 외부 공개자료는 `sourceUrl` 커스텀 메타데이터가 있으면 실제 원문 URL을 그대로 보여준다.
+- `collectedAt`: "수집 시점". fetcher가 기록한 `collectedAt` 커스텀 메타데이터가 있으면 그 값을, 없으면 GCS 객체의 시스템 `updated` 타임스탬프(가장 최근 업로드/재인덱싱 시각)를 대체로 사용한다. ⚠️ 후자는 "마지막으로 GCS에 쓰여진 시각"일 뿐 "실제 크롤링된 시각"과는 다를 수 있어 보수적인 근사값이다.
+- `lastRevisedNote`: 원문 발행일/최종 개정일은 자동으로 추출되지 않는다는 고정 안내 문구 (요구사항 4번 — 아직 미해결, 항상 이 문구로 안내).
+
+⚠️ 이 메타데이터 조회는 결과마다 GCS API를 호출하는 best-effort 동작이라, 실패해도(예: 권한 문제, 객체 삭제됨) 검색 자체는 멈추지 않고 해당 필드만 비어있게 채워진다.
 
 ### `POST /api/click`
 
