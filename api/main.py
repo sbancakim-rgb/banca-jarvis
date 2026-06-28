@@ -61,6 +61,11 @@ def search_documents(query: str, page_size: int = 20):
         serving_config=SERVING_CONFIG,
         query=query,
         page_size=page_size,
+        content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+            snippet_spec=discoveryengine.SearchRequest.ContentSearchSpec.SnippetSpec(
+                return_snippet=True,
+            ),
+        ),
     )
     response = search_client.search(req)
 
