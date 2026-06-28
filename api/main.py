@@ -13,7 +13,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 
 PROJECT_ID = os.environ["PROJECT_ID"]
-REGION = os.environ.get("REGION", "asia-northeast3")
+REGION = os.environ.get("REGION", "us-central1")  # Gemini 모델 호출용 Vertex AI 리전. gemini-2.0-flash-001은 asia-northeast3에서 제공되지 않음.
 DISCOVERY_LOCATION = os.environ.get("DISCOVERY_LOCATION", "global")
 ENGINE_ID = os.environ.get("ENGINE_ID", "banca-knowledge-search")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-001")

@@ -13,9 +13,14 @@ gcloud run deploy banca-search-api \
   --source . \
   --region asia-northeast3 \
   --service-account <terraform output search_api_service_account_email 값> \
-  --set-env-vars PROJECT_ID=<project_id>,REGION=asia-northeast3,DISCOVERY_LOCATION=global,ENGINE_ID=banca-knowledge-search \
+  --memory 1Gi \
+  --set-env-vars PROJECT_ID=<project_id>,REGION=us-central1,DISCOVERY_LOCATION=global,ENGINE_ID=banca-knowledge-search \
   --allow-unauthenticated
 ```
+
+> ⚠️ **`--region asia-northeast3`(Cloud Run 서비스 자체가 뜨는 위치)와 환경변수 `REGION`(Gemini 모델 호출 위치)은 서로 다른 값이어야 한다.** `gemini-2.0-flash-001`은 `asia-northeast3`(서울)에서 제공되지 않아 `REGION`을 거기로 설정하면 검색 시 `404 Publisher model ... was not found` 에러가 난다 — 반드시 `us-central1`처럼 Gemini가 제공되는 리전으로 지정할 것. Discovery Engine 검색 자체는 `DISCOVERY_LOCATION=global`을 따로 쓰므로 이 설정과는 무관하다.
+>
+> ⚠️ **`--memory 1Gi`를 빼면 기본 512MiB로 배포되는데, Gemini 호출 중 메모리 초과(`Memory limit ... exceeded`)로 요청이 실패할 수 있다.** 반드시 `--memory 1Gi` 이상으로 지정할 것.
 
 `--service-account` 값은 `infra/terraform`에서 아래로 확인:
 
