@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>방카 지식검색</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    background: linear-gradient(180deg, var(--bg) 0%, #1e293b 120px, #f1f5f9 120px, #f1f5f9 100%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header { padding: 24px 20px 14px; text-align: center; color: #fff; }
+  header .logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  header .tagline { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
+  .container { max-width: 480px; margin: 0 auto; padding: 0 16px 32px; }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 18px;
+    margin-top: 16px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--border);
+  }
+  input[type="text"] {
+    width: 100%;
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+    color: var(--text);
+  }
+  input:focus { outline: 2px solid var(--primary); border-color: transparent; }
+  button {
+    font-size: 15px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    background: var(--primary);
+  }
+  button:hover { background: var(--primary-dark); }
+  button:active { transform: scale(0.98); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  .search-row { display: flex; gap: 8px; }
+  .search-row input { flex: 1; }
+  .search-row button { width: auto; }
+  .popular-chip {
+    display: inline-block;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: var(--text);
+    margin: 4px 4px 0 0;
+    cursor: pointer;
+  }
+  .answer-box {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .answer-label { font-size: 11px; font-weight: 700; color: var(--primary-dark); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .search-topic {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 10px;
+    cursor: pointer;
+  }
+  .search-topic-title { font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .search-topic-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .search-items { margin-top: 10px; display: none; }
+  .search-items.open { display: block; }
+  .search-item { padding: 10px 0; border-top: 1px solid var(--border); cursor: default; }
+  .search-item:first-child { border-top: none; }
+  .search-item-title a { color: var(--primary-dark); font-weight: 600; text-decoration: none; font-size: 13.5px; }
+  .search-item-snippet { font-size: 12.5px; color: var(--text); margin-top: 4px; line-height: 1.5; }
+  .search-item-meta { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .source-badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-top: 6px;
+  }
+  .source-badge.internal { background: #dbeafe; color: #1d4ed8; }
+  .source-badge.external_snapshot { background: #fef3c7; color: #92400e; }
+  .source-badge.external_website { background: #f1f5f9; color: #475569; }
+  .search-disclaimer { font-size: 11px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+
+  details.settings { margin-top: 24px; }
+  details.settings summary {
+    text-align: center;
+    font-size: 11px;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 8px;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">방카 지식검색</div>
+    <div class="tagline">약관·세법·공시자료 통합 검색</div>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <div class="search-row">
+        <input id="searchInput" type="text" placeholder="검색어 입력 (예: 비과세)" />
+        <button id="searchBtn">🔍 검색</button>
+      </div>
+      <div id="searchPopular" class="hint"></div>
+      <div id="searchResults" class="hint"></div>
+      <div id="searchDisclaimer" class="search-disclaimer" style="display:none;"></div>
+    </div>
+
+    <details class="settings">
+      <summary>연결 설정</summary>
+      <input id="searchApiUrl" type="text" placeholder="지식검색 API URL" />
+    </details>
+  </div>
+
+  <script>
+    function stripSymbols(text) {
+      return String(text || '')
+        .replace(/[#*_`>{}\[\]\\|~^]/g, '')
+        .replace(/^[\s-]+/gm, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+    }
+
+    const searchApiUrlInput = document.getElementById('searchApiUrl');
+    searchApiUrlInput.value = localStorage.getItem('searchApiUrl') || '';
+    searchApiUrlInput.addEventListener('change', () => localStorage.setItem('searchApiUrl', searchApiUrlInput.value));
+
+    const searchInput = document.getElementById('searchInput');
+    const searchResultsEl = document.getElementById('searchResults');
+    const searchPopularEl = document.getElementById('searchPopular');
+    const searchDisclaimerEl = document.getElementById('searchDisclaimer');
+    const SOURCE_BADGE_CLASS = { internal: 'internal', external_snapshot: 'external_snapshot', external_website: 'external_website' };
+
+    function searchApiBase() {
+      return searchApiUrlInput.value.trim().replace(/\/$/, '');
+    }
+
+    function formatCollectedAt(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return null;
+      return d.toLocaleDateString('ko-KR') + ' 수집';
+    }
+
+    function recordSearchClick(query, docId) {
+      const base = searchApiBase();
+      if (!base || !docId) return;
+      fetch(base + '/api/click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, docId })
+      }).catch(() => {});
+    }
+
+    function buildSearchItem(item) {
+      const wrap = document.createElement('div');
+      wrap.className = 'search-item';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'search-item-title';
+      const source = item.source || {};
+      const link = document.createElement('a');
+      link.href = source.link || item.link || '#';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = stripSymbols(item.title);
+      titleEl.appendChild(link);
+      wrap.appendChild(titleEl);
+
+      if (item.snippet) {
+        const snippetEl = document.createElement('div');
+        snippetEl.className = 'search-item-snippet';
+        snippetEl.textContent = stripSymbols(item.snippet);
+        wrap.appendChild(snippetEl);
+      }
+
+      if (source.label) {
+        const badge = document.createElement('span');
+        badge.className = 'source-badge ' + (SOURCE_BADGE_CLASS[source.type] || 'external_website');
+        badge.textContent = source.label;
+        wrap.appendChild(badge);
+      }
+
+      const metaParts = [];
+      const collected = formatCollectedAt(source.collectedAt);
+      if (collected) metaParts.push(collected);
+      if (source.lastRevisedNote) metaParts.push(source.lastRevisedNote);
+      if (metaParts.length) {
+        const metaEl = document.createElement('div');
+        metaEl.className = 'search-item-meta';
+        metaEl.textContent = stripSymbols(metaParts.join(' · '));
+        wrap.appendChild(metaEl);
+      }
+
+      return wrap;
+    }
+
+    function buildTopicCard(query, topic) {
+      const wrap = document.createElement('div');
+      wrap.className = 'search-topic';
+
+      const titleRow = document.createElement('div');
+      titleRow.className = 'search-topic-title';
+      const titleText = document.createElement('span');
+      titleText.textContent = stripSymbols(topic.title);
+      const arrowEl = document.createElement('span');
+      arrowEl.textContent = '▾';
+      titleRow.appendChild(titleText);
+      titleRow.appendChild(arrowEl);
+      wrap.appendChild(titleRow);
+
+      const meta = document.createElement('div');
+      meta.className = 'search-topic-meta';
+      const itemCount = (topic.items || []).length;
+      meta.textContent = itemCount + '개 문서' + (topic.clickCount ? ' · 클릭 ' + topic.clickCount + '회' : '');
+      wrap.appendChild(meta);
+
+      const itemsEl = document.createElement('div');
+      itemsEl.className = 'search-items';
+      (topic.items || []).forEach((item) => itemsEl.appendChild(buildSearchItem(item)));
+      wrap.appendChild(itemsEl);
+
+      let opened = false;
+      let clicked = false;
+      titleRow.onclick = () => {
+        opened = !opened;
+        itemsEl.classList.toggle('open', opened);
+        arrowEl.textContent = opened ? '▴' : '▾';
+        if (opened && !clicked) { clicked = true; recordSearchClick(query, topic.primaryDocId); }
+      };
+
+      return wrap;
+    }
+
+    function renderSearchResults(query, data) {
+      searchResultsEl.className = '';
+      searchResultsEl.innerHTML = '';
+      searchDisclaimerEl.style.display = 'none';
+
+      if (data.error) { searchResultsEl.className = 'hint'; searchResultsEl.textContent = '오류: ' + data.error; return; }
+
+      searchPopularEl.innerHTML = '';
+      if (data.popularSearches && data.popularSearches.length) {
+        searchPopularEl.appendChild(document.createTextNode('인기 검색어: '));
+        data.popularSearches.forEach((q) => {
+          const chip = document.createElement('span');
+          chip.className = 'popular-chip';
+          chip.textContent = q;
+          chip.onclick = () => runSearch(q);
+          searchPopularEl.appendChild(chip);
+        });
+      }
+
+      if (data.answer) {
+        const answerBox = document.createElement('div');
+        answerBox.className = 'answer-box';
+        const label = document.createElement('div');
+        label.className = 'answer-label';
+        label.textContent = 'AI 답변';
+        const body = document.createElement('div');
+        body.textContent = stripSymbols(data.answer);
+        answerBox.appendChild(label);
+        answerBox.appendChild(body);
+        searchResultsEl.appendChild(answerBox);
+      }
+
+      if (!data.topics || data.topics.length === 0) {
+        if (!data.answer) { searchResultsEl.className = 'hint'; searchResultsEl.textContent = '검색 결과가 없습니다.'; }
+        return;
+      }
+
+      data.topics.forEach((topic) => searchResultsEl.appendChild(buildTopicCard(query, topic)));
+
+      if (data.disclaimer) {
+        searchDisclaimerEl.textContent = stripSymbols(data.disclaimer);
+        searchDisclaimerEl.style.display = 'block';
+      }
+    }
+
+    function runSearch(query) {
+      query = (query || '').trim();
+      const base = searchApiBase();
+      if (!base) { searchResultsEl.className = 'hint'; searchResultsEl.textContent = '먼저 연결 설정에서 지식검색 API URL을 입력하세요.'; return; }
+      if (!query) return;
+      searchInput.value = query;
+      searchResultsEl.className = 'hint';
+      searchResultsEl.textContent = '검색 중...';
+      searchDisclaimerEl.style.display = 'none';
+      fetch(base + '/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      })
+        .then((r) => r.json())
+        .then((data) => renderSearchResults(query, data))
+        .catch((e) => { searchResultsEl.className = 'hint'; searchResultsEl.textContent = '검색 오류: ' + e.message; });
+    }
+
+    document.getElementById('searchBtn').onclick = () => runSearch(searchInput.value);
+    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(searchInput.value); });
+  </script>
+</body>
+</html>

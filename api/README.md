@@ -1,6 +1,6 @@
 # 방카 지식검색 - `/api/search` (Cloud Run)
 
-검색어를 받아서 Vertex AI Search로 조회 → Gemini로 주제별 그룹 분류 → 클릭 통계로 그룹 순서 재정렬해서 돌려주는 백엔드.
+검색어를 받아서 Vertex AI Search로 조회 → Gemini로 답변 생성 + 주제별 그룹 분류 → 클릭 통계로 그룹 순서 재정렬해서 돌려주는 백엔드.
 
 먼저 `infra/terraform`이 배포되어 있어야 한다 (검색 엔진, Firestore, 서비스 계정이 거기서 만들어짐).
 
@@ -48,6 +48,7 @@ terraform output search_api_service_account_email
 ```json
 {
   "query": "비과세",
+  "answer": "비과세 종합저축은 소득세법 제16조에 따라 일정 한도 내 이자소득에 대해 비과세가 적용됩니다...",
   "topics": [
     {
       "title": "연금보험 비과세 한도",
@@ -75,7 +76,9 @@ terraform output search_api_service_account_email
 }
 ```
 
-프론트엔드는 처음에는 `topics[].title` 목록만 보여주고, 클릭하면 해당 `items`를 펼쳐서 보여주면 된다. `popularSearches`는 검색창 아래 추천 검색어로 그대로 노출. `disclaimer`는 AI 답변/분류 하단에 항상 표시해야 한다 (infra/terraform/README.md의 출처 정보 요구사항 5번).
+`answer`는 검색 결과(snippet)만 근거로 Gemini가 생성한 직접 답변 문장 — 단순 링크 목록이 아니라 질문에 대한 답을 화면 맨 위에 보여주기 위한 필드. 근거를 찾지 못하면 "명확한 답을 찾지 못했습니다" 같은 문장이 온다. ⚠️ **이 답변은 AI가 생성한 것이라 틀릴 수 있다** — 보험/세법처럼 정확성이 중요한 도메인이라 `disclaimer`를 `answer` 바로 아래에 항상 같이 보여줘야 하고, 사용자가 원문(`topics[].items[].source.link`)을 직접 확인하도록 유도해야 한다.
+
+프론트엔드는 `answer`를 가장 눈에 잘 보이는 위치(맨 위)에 보여주고, 그 아래에 근거가 된 `topics[].title` 목록을 보여준 뒤 클릭하면 해당 `items`를 펼쳐서 보여주면 된다. `popularSearches`는 검색창 아래 추천 검색어로 그대로 노출. `disclaimer`는 AI 답변/분류 하단에 항상 표시해야 한다 (infra/terraform/README.md의 출처 정보 요구사항 5번).
 
 #### `items[].source` 필드
 

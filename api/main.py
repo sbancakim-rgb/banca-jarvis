@@ -150,20 +150,24 @@ def _build_source_info(document_name: str, struct: dict) -> dict:
     }
 
 
-def cluster_with_gemini(query: str, results: list) -> list:
+def generate_answer_and_topics(query: str, results: list):
     if not results:
-        return []
+        return "", []
 
     numbered = "\n".join(
         f"[{i}] docId={r['docId']} title={r['title']} snippet={r['snippet'][:200]}"
         for i, r in enumerate(results)
     )
-    prompt = f"""다음은 검색어 "{query}"에 대한 검색 결과 목록이다. 내용이 비슷한 것끼리 묶어서
-주제별 그룹으로 분류하고, 각 그룹에 사용자가 클릭하고 싶어질 만한 짧은 한글 제목을 붙여라.
-"primaryIndex"는 그 그룹을 대표하는 가장 핵심적인 결과의 번호([] 안의 숫자)다.
+    prompt = f"""다음은 검색어 "{query}"에 대한 검색 결과 목록이다. 아래 두 가지를 수행하라.
+
+1) "answer": 검색 결과에 실제로 나온 내용만 근거로, 질문에 대한 직접적인 답을 한국어로 2~4문장으로 작성하라.
+   검색 결과에서 답을 찾을 수 없으면 추측하지 말고 "검색된 자료에서 명확한 답을 찾지 못했습니다. 아래 문서를 직접 확인해주세요."라고 답하라.
+2) "groups": 검색 결과를 내용이 비슷한 것끼리 묶어 주제별 그룹으로 분류하고, 각 그룹에 사용자가 클릭하고
+   싶어질 만한 짧은 한글 제목을 붙여라. "primaryIndex"는 그 그룹을 대표하는 가장 핵심적인 결과의 번호([] 안의 숫자)다.
+
 반드시 아래 JSON 형식으로만 답하라:
 
-{{"groups": [{{"title": "...", "indices": [0, 2, 5], "primaryIndex": 0}}]}}
+{{"answer": "...", "groups": [{{"title": "...", "indices": [0, 2, 5], "primaryIndex": 0}}]}}
 
 검색 결과:
 {numbered}
@@ -175,8 +179,11 @@ def cluster_with_gemini(query: str, results: list) -> list:
     )
 
     try:
-        groups = json.loads(response.text).get("groups", [])
+        parsed = json.loads(response.text)
+        answer = parsed.get("answer", "")
+        groups = parsed.get("groups", [])
     except (ValueError, AttributeError, TypeError):
+        answer = ""
         groups = [{"title": query, "indices": list(range(len(results))), "primaryIndex": 0}]
 
     topics = []
@@ -194,7 +201,7 @@ def cluster_with_gemini(query: str, results: list) -> list:
                 "items": [results[i] for i in indices],
             }
         )
-    return topics
+    return answer, topics
 
 
 def attach_click_ranking(norm_query: str, topics: list) -> list:
@@ -252,13 +259,14 @@ def api_search():
 
     norm_query = normalize_query(query)
     results = search_documents(query)
-    topics = cluster_with_gemini(query, results)
+    answer, topics = generate_answer_and_topics(query, results)
     topics = attach_click_ranking(norm_query, topics)
     record_search(norm_query)
 
     return jsonify(
         {
             "query": query,
+            "answer": answer,
             "topics": topics,
             "popularSearches": get_popular_searches(),
             "disclaimer": AI_DISCLAIMER,
