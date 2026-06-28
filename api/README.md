@@ -21,6 +21,8 @@ gcloud run deploy banca-search-api \
 > ⚠️ **`--region asia-northeast3`(Cloud Run 서비스 자체가 뜨는 위치)와 환경변수 `REGION`(Gemini 모델 호출 위치)은 서로 다른 값이어야 한다.** `gemini-2.0-flash-001`은 `asia-northeast3`(서울)에서 제공되지 않아 `REGION`을 거기로 설정하면 검색 시 `404 Publisher model ... was not found` 에러가 난다 — 반드시 `us-central1`처럼 Gemini가 제공되는 리전으로 지정할 것. Discovery Engine 검색 자체는 `DISCOVERY_LOCATION=global`을 따로 쓰므로 이 설정과는 무관하다.
 >
 > ⚠️ **`--memory 1Gi`를 빼면 기본 512MiB로 배포되는데, Gemini 호출 중 메모리 초과(`Memory limit ... exceeded`)로 요청이 실패할 수 있다.** 반드시 `--memory 1Gi` 이상으로 지정할 것.
+>
+> ⚠️ **Google이 Gemini 모델을 주기적으로(보통 출시 후 1년 전후) 단종시킨다.** 실제로 `gemini-2.0-flash-001`은 2026년 6월 1일부로 완전히 단종되어 `404 Publisher model ... was not found` 에러가 났고, `GEMINI_MODEL` 기본값을 `gemini-2.5-flash`(2026년 6월 기준 정식 지원 버전)로 교체했다. 이후에도 같은 에러(`404 Publisher model ...`)가 나면 모델이 또 단종됐을 가능성이 높으니, GCP 콘솔 > Vertex AI > Model Garden에서 "Gemini" 검색 후 현재 지원되는(= "Deprecated" 표시가 없는) 모델 ID로 `GEMINI_MODEL` 환경변수를 갱신해서 재배포할 것. `-preview-`가 붙은 버전은 보통 수개월 내 단종되므로 피하고 정식(GA) 버전을 쓸 것.
 
 `--service-account` 값은 `infra/terraform`에서 아래로 확인:
 
