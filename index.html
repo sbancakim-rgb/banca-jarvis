@@ -728,7 +728,9 @@
         function pushChunk(cleaned) {
           if (!cleaned) return;
           const last = chunks[chunks.length - 1] || '';
-          if (cleaned === last || (last && last.indexOf(cleaned) !== -1)) return; // 재시작 시 같은 말이 다시 잡히는 중복 방지
+          if (cleaned === last) return;
+          if (last && last.indexOf(cleaned) !== -1) return; // 새 조각이 이전 조각에 이미 포함됨 (같은 말 중복 인식) - 무시
+          if (last && cleaned.indexOf(last) !== -1) { chunks[chunks.length - 1] = cleaned; return; } // 새 조각이 이전 조각을 포함하는 더 긴/보정된 버전 - 교체
           chunks.push(cleaned);
         }
 
