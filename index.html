@@ -183,6 +183,16 @@
     margin-top: 8px;
   }
 
+  .select-row { display: flex; gap: 8px; }
+  .select-row select {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13.5px;
+    background: #fff;
+  }
+
   /* 대시보드 */
   .dash-bank { margin-bottom: 16px; }
   .dash-bank:last-child { margin-bottom: 0; }
@@ -289,6 +299,12 @@
         <div class="cmd-row"><span class="cmd-label">완료</span><span class="cmd-words">"<b>브리핑</b>"</span></div>
         <div class="cmd-row"><span class="cmd-label">멈춤</span><span class="cmd-words">"<b>오케이</b>", "<b>여기까지</b>" (브리핑 음성 듣는 중)</span></div>
       </div>
+      <div class="hint" style="margin-top:14px;">또는 아래에서 은행/지점을 직접 선택해서 조회할 수 있습니다.</div>
+      <div class="select-row">
+        <select id="queryBankSelect"><option value="">은행 선택</option></select>
+        <select id="queryBranchSelect"><option value="">지점 선택</option></select>
+      </div>
+      <button id="queryBySelectBtn" class="btn-neutral" style="margin-top:8px;">선택한 지점 조회</button>
       <div id="queryStatus" class="status-box"></div>
     </div>
 
@@ -311,12 +327,6 @@
       <button id="toggleDashboardListBtn" class="btn-neutral" style="margin-bottom:12px;">은행별 방문 현황 보기</button>
       <div id="dashboardList" style="display:none;"></div>
       <div class="hint">모수는 판매자정보 시트 K열(영업대상)에 체크된 지점 기준으로 집계됩니다.</div>
-    </div>
-
-    <div class="card">
-      <h3>제안서 요청 현황</h3>
-      <button id="refreshProposalsBtn" class="btn-neutral" style="margin-bottom:12px;">↻ 새로고침</button>
-      <div id="proposalList"></div>
     </div>
 
     <details class="settings">
@@ -890,6 +900,49 @@
       stateName: 'recording',
       listeningLabel: '⏹ 입력완료 (다시 누르면 종료)'
     });
+    // ===================== 지점 조회: 은행/지점 드롭다운으로 직접 선택 =====================
+    const queryBankSelect = document.getElementById('queryBankSelect');
+    const queryBranchSelect = document.getElementById('queryBranchSelect');
+    let branchListData = [];
+
+    function loadBranchList() {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      jsonpRequest(url, { action: 'listBranches' }, (data) => {
+        if (data.error || !data.branches) return;
+        branchListData = data.branches;
+        const banks = [...new Set(branchListData.map((b) => b.은행명))];
+        queryBankSelect.innerHTML = '<option value="">은행 선택</option>' +
+          banks.map((b) => '<option value="' + b + '">' + stripSymbols(b) + '</option>').join('');
+        updateBranchOptions();
+      });
+    }
+
+    function updateBranchOptions() {
+      const bank = queryBankSelect.value;
+      const branches = branchListData.filter((b) => !bank || b.은행명 === bank);
+      queryBranchSelect.innerHTML = '<option value="">지점 선택</option>' +
+        branches.map((b) => '<option value="' + b.지점명 + '">' + stripSymbols(b.지점명) + '</option>').join('');
+    }
+
+    queryBankSelect.addEventListener('change', updateBranchOptions);
+
+    document.getElementById('queryBySelectBtn').onclick = () => {
+      const url = urlInput.value.trim();
+      const bank = queryBankSelect.value;
+      const branch = queryBranchSelect.value;
+      if (!url) { setQueryStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
+      if (!bank || !branch) { setQueryStatus('은행과 지점을 모두 선택해주세요.'); return; }
+      setQueryStatus('조회 중...\n' + bank + ' ' + branch);
+      jsonpRequest(url, { action: 'queryByBranch', bank, branch }, (data) => {
+        if (data.error) { setQueryStatus('오류: ' + data.error); return; }
+        setQueryStatus(data.summary);
+        speakSummary(data.summary);
+      });
+    };
+
+    loadBranchList();
+
     const queryRecorder = createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript, {
       setStatus: setQueryStatus,
       stopPhrases: ['브리핑'],
@@ -975,81 +1028,6 @@
     document.getElementById('calPrev').onclick = () => { calMonthOffset--; renderCalendar(); };
     document.getElementById('calNext').onclick = () => { calMonthOffset++; renderCalendar(); };
     renderCalendar();
-
-    // ===================== 제안서 요청 현황 =====================
-    const proposalList = document.getElementById('proposalList');
-
-    function loadProposals() {
-      const url = urlInput.value.trim();
-      if (!url) { proposalList.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
-      proposalList.textContent = '불러오는 중...';
-      jsonpRequest(url, { action: 'listProposals' }, (data) => {
-        if (data.error) { proposalList.textContent = '오류: ' + data.error; return; }
-        proposalList.innerHTML = '';
-        if (!data.items || data.items.length === 0) { proposalList.textContent = '제안서 요청이 없습니다.'; return; }
-        data.items.forEach((item) => proposalList.appendChild(buildProposalCard(item, data.header)));
-      });
-    }
-
-    function buildProposalCard(item, header) {
-      const wrap = document.createElement('div');
-      wrap.className = 'proposal-card-item';
-
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      meta.textContent = stripSymbols([item['날짜'], item['은행명'], item['지점명'], item['판매자명']].filter(Boolean).join(' · '));
-      wrap.appendChild(meta);
-
-      const editableFields = ['상품명', '가입금액', '고객성명', '고객나이', '고객성별'];
-      const inputs = {};
-      editableFields.forEach((key) => {
-        const group = document.createElement('div');
-        group.className = 'field-group';
-        const label = document.createElement('label');
-        label.textContent = key;
-        const input = document.createElement('textarea');
-        input.rows = 1;
-        input.value = stripSymbols(item[key] || '');
-        inputs[key] = input;
-        group.appendChild(label);
-        group.appendChild(input);
-        wrap.appendChild(group);
-      });
-
-      let status = item['처리상태'] === '완료' ? '완료' : '대기';
-      const pill = document.createElement('div');
-      pill.className = 'status-pill ' + status;
-      pill.textContent = status === '완료' ? '✓ 완료' : '● 대기 (눌러서 완료 처리)';
-      pill.onclick = () => {
-        status = status === '대기' ? '완료' : '대기';
-        pill.className = 'status-pill ' + status;
-        pill.textContent = status === '완료' ? '✓ 완료' : '● 대기 (눌러서 완료 처리)';
-        saveProposal();
-      };
-      wrap.appendChild(pill);
-
-      const saveBtn = document.createElement('button');
-      saveBtn.className = 'small-save';
-      saveBtn.textContent = '저장';
-      saveBtn.onclick = saveProposal;
-      wrap.appendChild(saveBtn);
-
-      function saveProposal() {
-        const url = urlInput.value.trim();
-        const data = {};
-        header.forEach((h) => { data[h] = item[h]; });
-        editableFields.forEach((key) => { data[key] = inputs[key].value.trim(); });
-        data['처리상태'] = status;
-        jsonpRequest(url, { action: 'updateProposal', rowIndex: item.rowIndex, data: JSON.stringify(data) }, (res) => {
-          if (res.error) { alert('저장 오류: ' + res.error); }
-        });
-      }
-
-      return wrap;
-    }
-
-    document.getElementById('refreshProposalsBtn').onclick = loadProposals;
-    loadProposals();
 
     // ===================== 대시보드 (은행별 모수/당월방문/미방문) =====================
     const dashboardList = document.getElementById('dashboardList');
