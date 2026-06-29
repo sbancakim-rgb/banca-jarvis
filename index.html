@@ -51,12 +51,25 @@
   .card-subtitle {
     margin: 18px 0 8px;
     font-size: 12px;
-    color: var(--muted);
-    font-weight: 600;
+    color: var(--text);
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    border-left: 3px solid var(--primary);
+    padding-left: 8px;
   }
   .card-subtitle.first { margin-top: 0; }
+  .date-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .date-row label { font-size: 12px; color: var(--muted); font-weight: 600; flex: 0 0 auto; }
+  .date-row input[type="date"] {
+    flex: 1;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13.5px;
+    background: #fff;
+    color: var(--text);
+  }
   input[type="text"], input:not([type]) {
     width: 100%;
     font-size: 14px;
@@ -103,11 +116,16 @@
   }
   .status-box.visible { display: block; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
-  .cmd-list { margin-top: 8px; }
-  .cmd-row { display: flex; gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; align-items: baseline; }
-  .cmd-row .cmd-label { flex: 0 0 52px; font-weight: 700; color: var(--text); }
-  .cmd-row .cmd-words { }
-  .cmd-words b { color: var(--primary-dark); font-weight: 600; }
+  .cmd-line {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 8px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .cmd-line .cmd-label { font-weight: 700; color: var(--text); }
+  .cmd-line b { color: var(--primary-dark); font-weight: 600; }
+  .cmd-line .sep { margin: 0 6px; color: var(--border); }
 
   /* 검토/수정 폼 */
   .field-group { margin-bottom: 14px; }
@@ -290,15 +308,19 @@
   <div class="container">
     <div class="card">
       <h3>정보 기록</h3>
+      <div class="date-row">
+        <label for="recordDateInput">기록 날짜</label>
+        <input type="date" id="recordDateInput" />
+      </div>
       <div class="card-subtitle first">음성으로 입력</div>
       <div class="btn-row">
         <button id="recordBtn" class="btn-primary">🎤 방문 기록 남기기</button>
         <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
       </div>
-      <div class="cmd-list">
-        <div class="cmd-row"><span class="cmd-label">시작</span><span class="cmd-words">"<b>기록</b>", "<b>시작</b>"</span></div>
-        <div class="cmd-row"><span class="cmd-label">완료</span><span class="cmd-words">"<b>완료</b>", "<b>여기까지</b>"</span></div>
-        <div class="cmd-row"><span class="cmd-label">취소</span><span class="cmd-words">"<b>취소</b>"</span></div>
+      <div class="cmd-line">
+        <span class="cmd-label">시작</span> "<b>기록</b>"·"<b>시작</b>"<span class="sep">|</span>
+        <span class="cmd-label">완료</span> "<b>완료</b>"·"<b>여기까지</b>"<span class="sep">|</span>
+        <span class="cmd-label">취소</span> "<b>취소</b>"
       </div>
       <div id="recordStatus" class="status-box"></div>
 
@@ -333,10 +355,10 @@
         <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
       </div>
       <div class="hint">은행+지점(+판매자명)을 말한 뒤 "브리핑"이 들어간 말을 하면 바로 시작됩니다.</div>
-      <div class="cmd-list">
-        <div class="cmd-row"><span class="cmd-label">시작</span><span class="cmd-words">"<b>지점</b>", "<b>조회</b>", "<b>브리핑</b>"</span></div>
-        <div class="cmd-row"><span class="cmd-label">완료</span><span class="cmd-words">"<b>브리핑</b>"</span></div>
-        <div class="cmd-row"><span class="cmd-label">멈춤</span><span class="cmd-words">"<b>오케이</b>", "<b>여기까지</b>" (브리핑 음성 듣는 중)</span></div>
+      <div class="cmd-line">
+        <span class="cmd-label">시작</span> "<b>지점</b>"·"<b>조회</b>"·"<b>브리핑</b>"<span class="sep">|</span>
+        <span class="cmd-label">완료</span> "<b>브리핑</b>"<span class="sep">|</span>
+        <span class="cmd-label">멈춤</span> "<b>오케이</b>"·"<b>여기까지</b>"(브리핑 듣는 중)
       </div>
       <div class="card-subtitle">선택하여 조회</div>
       <div class="hint">은행/지점(+판매자)을 직접 선택해서 조회할 수 있습니다. 판매자를 선택하지 않으면 지점 전체 판매자 정보를 알려줍니다.</div>
@@ -387,6 +409,15 @@
     const queryStatusEl = document.getElementById('queryStatus');
     urlInput.value = localStorage.getItem('webAppUrl') || '';
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
+
+    // 정보 기록 카드의 날짜 선택 (음성/텍스트 입력 공용). 기본값은 오늘, 클릭하면 브라우저 기본 달력이 뜬다.
+    const recordDateInput = document.getElementById('recordDateInput');
+    function todayLocalISO() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    recordDateInput.value = todayLocalISO();
+    function getRecordDate() { return recordDateInput.value || todayLocalISO(); }
 
     function stripSymbols(text) {
       return String(text || '')
@@ -876,7 +907,8 @@
       const url = urlInput.value.trim();
       if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
       setRecordStatus('저장 중...');
-      jsonpRequest(url, { action: 'commit', data: JSON.stringify(data) }, (res) => {
+      const payload = Object.assign({}, data, { date: getRecordDate() });
+      jsonpRequest(url, { action: 'commit', data: JSON.stringify(payload) }, (res) => {
         if (res.error) { setRecordStatus('오류: ' + res.error); appState = 'idle'; resumeWakeListener(); return; }
         setRecordStatus('기록 완료\n\n' + formatSavedResults(res.results));
         speak('기록했습니다.');
@@ -1050,7 +1082,8 @@
       if (!bank || !branch) { showStatus(statusEl, '은행과 지점을 모두 선택해주세요.'); return; }
       if (!text) { showStatus(statusEl, '입력할 내용이 없습니다.'); return; }
       showStatus(statusEl, '저장 중...');
-      jsonpRequest(url, { action: 'recordForSeller', bank, branch, seller, text }, (data) => {
+      const date = getRecordDate();
+      jsonpRequest(url, { action: 'recordForSeller', bank, branch, seller, text, date }, (data) => {
         if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message)); return; }
         showStatus(statusEl, '저장 완료\n\n' + formatSavedResults(data.results));
         noteEl.value = '';
