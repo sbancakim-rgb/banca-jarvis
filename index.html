@@ -42,13 +42,21 @@
     border: 1px solid var(--border);
   }
   .card h3 {
-    margin: 0 0 12px;
-    font-size: 13px;
+    margin: 0 0 14px;
+    font-size: 18px;
+    color: var(--text);
+    font-weight: 700;
+    text-align: center;
+  }
+  .card-subtitle {
+    margin: 18px 0 8px;
+    font-size: 12px;
     color: var(--muted);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .card-subtitle.first { margin-top: 0; }
   input[type="text"], input:not([type]) {
     width: 100%;
     font-size: 14px;
@@ -282,6 +290,7 @@
   <div class="container">
     <div class="card">
       <h3>정보 기록</h3>
+      <div class="card-subtitle first">음성으로 입력</div>
       <div class="btn-row">
         <button id="recordBtn" class="btn-primary">🎤 방문 기록 남기기</button>
         <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
@@ -293,7 +302,8 @@
       </div>
       <div id="recordStatus" class="status-box"></div>
 
-      <div class="hint" style="margin-top:14px;">또는 아래에서 은행/지점/판매자를 선택하고, 나열식으로 자유롭게 적어서 저장할 수 있습니다. (선택한 항목에 내용이 누적되며, 기존 내용은 지워지지 않습니다)</div>
+      <div class="card-subtitle">텍스트로 입력</div>
+      <div class="hint">은행/지점/판매자를 선택하고, 나열식으로 자유롭게 적어서 저장할 수 있습니다. (선택한 항목에 내용이 누적되며, 기존 내용은 지워지지 않습니다)</div>
       <div class="select-row">
         <select id="recordBankSelect"><option value="">은행 선택</option></select>
         <select id="recordBranchSelect"><option value="">지점 선택</option></select>
@@ -317,6 +327,7 @@
 
     <div class="card">
       <h3>지점 조회</h3>
+      <div class="card-subtitle first">음성으로 조회</div>
       <div class="btn-row">
         <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
         <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
@@ -327,7 +338,8 @@
         <div class="cmd-row"><span class="cmd-label">완료</span><span class="cmd-words">"<b>브리핑</b>"</span></div>
         <div class="cmd-row"><span class="cmd-label">멈춤</span><span class="cmd-words">"<b>오케이</b>", "<b>여기까지</b>" (브리핑 음성 듣는 중)</span></div>
       </div>
-      <div class="hint" style="margin-top:14px;">또는 아래에서 은행/지점(+판매자)을 직접 선택해서 조회할 수 있습니다. 판매자를 선택하지 않으면 지점 전체 판매자 정보를 알려줍니다.</div>
+      <div class="card-subtitle">선택하여 조회</div>
+      <div class="hint">은행/지점(+판매자)을 직접 선택해서 조회할 수 있습니다. 판매자를 선택하지 않으면 지점 전체 판매자 정보를 알려줍니다.</div>
       <div class="select-row">
         <select id="queryBankSelect"><option value="">은행 선택</option></select>
         <select id="queryBranchSelect"><option value="">지점 선택</option></select>
