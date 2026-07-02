@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Banca Jarvis</title>
+<title>방카 활동의 기록</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#1d4ed8" />
@@ -30,8 +30,7 @@
     min-height: 100vh;
   }
   header { padding: 28px 20px 16px; text-align: center; color: #fff; }
-  header .logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-  header .tagline { font-size: 13px; color: #cbd5e1; margin-top: 4px; }
+  header .logo { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
   .container { max-width: 420px; margin: 0 auto; padding: 0 16px 32px; }
   .card {
     background: var(--card);
@@ -48,19 +47,8 @@
     font-weight: 700;
     text-align: center;
   }
-  .card-subtitle {
-    margin: 18px 0 8px;
-    font-size: 12px;
-    color: var(--text);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    border-left: 3px solid var(--primary);
-    padding-left: 8px;
-  }
-  .card-subtitle.first { margin-top: 0; }
-  .date-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-  .date-row label { font-size: 12px; color: var(--muted); font-weight: 600; flex: 0 0 auto; }
+  .date-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .date-row label { font-size: 12px; color: var(--muted); font-weight: 600; flex: 0 0 auto; white-space: nowrap; }
   .date-row input[type="date"] {
     flex: 1;
     padding: 9px 10px;
@@ -70,20 +58,10 @@
     background: #fff;
     color: var(--text);
   }
-  input[type="text"], input:not([type]) {
-    width: 100%;
-    font-size: 14px;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: #f8fafc;
-    color: var(--text);
-  }
-  input:focus { outline: 2px solid var(--primary); border-color: transparent; }
   button {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    padding: 14px 18px;
+    padding: 13px 18px;
     border-radius: 12px;
     border: none;
     color: #fff;
@@ -96,16 +74,12 @@
     transition: transform 0.05s ease, opacity 0.15s ease;
   }
   button:active { transform: scale(0.98); opacity: 0.9; }
-  .btn-row { display: flex; flex-direction: column; gap: 10px; }
   .btn-primary { background: var(--primary); }
   .btn-primary:hover { background: var(--primary-dark); }
   .btn-neutral { background: var(--neutral); }
-  .btn-ghost { background: #fff; color: var(--danger); border: 1px solid #fecaca; }
-  .btn-stop { background: #fff; color: var(--primary-dark); border: 1px solid #bfdbfe; display: none; }
-  .btn-stop.visible { display: flex; }
   .status-box {
-    margin-top: 12px;
-    font-size: 13.5px;
+    margin-top: 10px;
+    font-size: 13px;
     line-height: 1.6;
     color: var(--text);
     white-space: pre-wrap;
@@ -115,32 +89,33 @@
     display: none;
   }
   .status-box.visible { display: block; }
-  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
-  .cmd-line {
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 8px;
-    line-height: 1.6;
-    overflow-wrap: anywhere;
+  .select-row { display: flex; gap: 8px; }
+  .select-row select {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13.5px;
+    background: #fff;
+    color: var(--text);
+    min-width: 0;
   }
-  .cmd-line .cmd-label { font-weight: 700; color: var(--text); }
-  .cmd-line b { color: var(--primary-dark); font-weight: 600; }
-  .cmd-line .sep { margin: 0 6px; color: var(--border); }
-
-  /* 검토/수정 폼 */
-  .field-group { margin-bottom: 14px; }
-  .field-group:last-child { margin-bottom: 0; }
+  .sel-full { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border); font-size: 13.5px; background: #fff; color: var(--text); margin-top: 8px; }
+  .field-group { margin-bottom: 12px; }
+  .field-group:last-of-type { margin-bottom: 0; }
   .field-group label {
     display: block;
     font-size: 12px;
     color: var(--muted);
-    margin-bottom: 6px;
-    font-weight: 600;
+    font-weight: 700;
+    margin-bottom: 5px;
+    border-left: 3px solid var(--primary);
+    padding-left: 7px;
   }
   .field-group textarea {
     width: 100%;
-    font-size: 15px;
-    padding: 10px 12px;
+    font-size: 14px;
+    padding: 9px 11px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: #f8fafc;
@@ -148,17 +123,11 @@
     resize: vertical;
     min-height: 38px;
     font-family: inherit;
+    line-height: 1.5;
   }
-  .field-group textarea:focus { outline: 2px solid var(--primary); border-color: transparent; }
-  .section-divider {
-    font-size: 11px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin: 16px 0 8px;
-    font-weight: 700;
-  }
-  .section-divider:first-child { margin-top: 0; }
+  .field-group textarea:focus { outline: 2px solid var(--primary); border-color: transparent; background: #fff; }
+  .field-group textarea.has-data { background: #fff; border-color: #bfdbfe; }
+  .seller-meta { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; padding: 8px 12px; background: #eff6ff; border-radius: 8px; }
 
   /* 달력 */
   .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -177,92 +146,27 @@
   }
   .cal-cell.empty { background: transparent; cursor: default; }
   .cal-cell.selected { background: var(--primary); color: #fff; }
+  .cal-cell.has-visit { border-color: var(--primary); }
   .cal-day-label { font-size: 11px; color: var(--muted); text-align: center; }
-  #calendarResult { margin-top: 14px; font-size: 13.5px; line-height: 1.6; }
-  .visit-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  #calendarResult { margin-top: 14px; }
+  .visit-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13.5px; line-height: 1.5;
+  }
   .visit-item:last-child { border-bottom: none; }
-
-  /* 제안서 */
-  .proposal-card-item {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px;
-    margin-bottom: 12px;
-  }
-  .proposal-card-item .meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-  .status-pill {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 6px 12px;
-    border-radius: 999px;
-    cursor: pointer;
-    width: auto;
-  }
-  .status-pill.대기 { background: #fef3c7; color: #92400e; }
-  .status-pill.완료 { background: #dcfce7; color: #166534; }
-  .proposal-card-item .small-save {
-    width: auto;
-    padding: 8px 12px;
-    font-size: 13px;
-    background: var(--primary);
-    margin-top: 8px;
-  }
-
-  .select-row { display: flex; gap: 8px; }
-  .select-row select {
-    flex: 1;
-    padding: 10px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    font-size: 13.5px;
-    background: #fff;
-  }
-  .note-textarea {
-    width: 100%;
-    margin-top: 10px;
-    padding: 10px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    font-size: 13.5px;
-    font-family: inherit;
-    resize: vertical;
-  }
-  .seller-block { margin-bottom: 12px; }
-  .seller-block:last-child { margin-bottom: 0; }
-  .seller-block .seller-name { font-weight: 700; }
-  .seller-block .info-line { font-weight: 700; }
-  .seller-block .info-empty { font-weight: 400; color: var(--muted); }
-  .seller-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  .visit-num { font-size: 12px; font-weight: 700; color: var(--primary); min-width: 18px; padding-top: 1px; }
+  .visit-text { flex: 1; }
+  .visit-seller { font-size: 12px; color: var(--muted); }
 
   /* 대시보드 */
   .dash-bank { margin-bottom: 16px; }
   .dash-bank:last-child { margin-bottom: 0; }
-  .dash-bank-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-  .dash-bar-track {
-    position: relative;
-    height: 22px;
-    border-radius: 8px;
-    background: #fee2e2;
-    overflow: hidden;
-  }
-  .dash-bar-fill {
-    position: absolute; left: 0; top: 0; bottom: 0;
-    background: #16a34a;
-    border-radius: 8px 0 0 8px;
-  }
-  .dash-bar-label {
-    position: relative;
-    z-index: 1;
-    font-size: 11px;
-    line-height: 22px;
-    padding: 0 8px;
-    color: #fff;
-    font-weight: 700;
-    text-shadow: 0 1px 1px rgba(0,0,0,0.25);
-  }
+  .dash-bank-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; cursor: pointer; }
+  .dash-bar-track { position: relative; height: 22px; border-radius: 8px; background: #fee2e2; overflow: hidden; }
+  .dash-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #16a34a; border-radius: 8px 0 0 8px; }
+  .dash-bar-label { position: relative; z-index: 1; font-size: 11px; line-height: 22px; padding: 0 8px; color: #fff; font-weight: 700; text-shadow: 0 1px 1px rgba(0,0,0,0.25); }
   .dash-stats { display: flex; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--muted); }
-  .dash-bank-name { cursor: pointer; }
   .dash-summary { margin-bottom: 16px; }
   .dash-summary-numbers { display: flex; justify-content: space-between; margin-bottom: 8px; }
   .dash-summary-item { text-align: center; flex: 1; }
@@ -271,18 +175,8 @@
   .dash-summary-item.total .num { color: #1e293b; }
   .dash-summary-item.visited .num { color: #16a34a; }
   .dash-summary-item.unvisited .num { color: #dc2626; }
-  .dash-summary-track {
-    position: relative;
-    height: 10px;
-    border-radius: 6px;
-    background: #fee2e2;
-    overflow: hidden;
-  }
-  .dash-summary-fill {
-    position: absolute; left: 0; top: 0; bottom: 0;
-    background: #16a34a;
-    border-radius: 6px 0 0 6px;
-  }
+  .dash-summary-track { position: relative; height: 10px; border-radius: 6px; background: #fee2e2; overflow: hidden; }
+  .dash-summary-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #16a34a; border-radius: 6px 0 0 6px; }
   .dash-summary-pct { text-align: right; font-size: 11px; color: var(--muted); margin-top: 4px; }
   .branch-detail { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
   .branch-chip { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
@@ -290,89 +184,70 @@
   .branch-chip.unvisited { background: #fee2e2; color: #b91c1c; }
 
   details.settings { margin-top: 24px; }
-  details.settings summary {
-    text-align: center;
-    font-size: 11px;
-    color: #94a3b8;
-    cursor: pointer;
-    padding: 8px;
-  }
+  details.settings summary { text-align: center; font-size: 11px; color: #94a3b8; cursor: pointer; padding: 8px; }
+  details.settings input { width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; background: #f8fafc; }
 </style>
 </head>
 <body>
   <header>
-    <div class="logo">Banca Jarvis</div>
-    <div class="tagline">방카슈랑스 영업 보조 어시스턴트</div>
+    <div class="logo">방카 활동의 기록</div>
   </header>
 
   <div class="container">
+
+    <!-- ① 방문 지점 입력 -->
     <div class="card">
-      <h3>정보 기록</h3>
+      <h3>방문 지점 입력</h3>
       <div class="date-row">
-        <label for="recordDateInput">기록 날짜</label>
-        <input type="date" id="recordDateInput" />
+        <label for="visitDateInput">방문일</label>
+        <input type="date" id="visitDateInput" />
       </div>
-      <div class="card-subtitle first">음성으로 입력</div>
-      <div class="btn-row">
-        <button id="recordBtn" class="btn-primary">🎤 방문 기록 남기기</button>
-        <button id="cancelBtn" class="btn-ghost">녹음 취소</button>
-      </div>
-      <div class="cmd-line">
-        <span class="cmd-label">시작</span> "<b>기록</b>"·"<b>시작</b>"<span class="sep">|</span>
-        <span class="cmd-label">완료</span> "<b>완료</b>"·"<b>여기까지</b>"<span class="sep">|</span>
-        <span class="cmd-label">취소</span> "<b>취소</b>"
-      </div>
-      <div id="recordStatus" class="status-box"></div>
-
-      <div class="card-subtitle">텍스트로 입력</div>
-      <div class="hint">은행/지점/판매자를 선택하고, 나열식으로 자유롭게 적어서 저장할 수 있습니다. (선택한 항목에 내용이 누적되며, 기존 내용은 지워지지 않습니다)</div>
       <div class="select-row">
-        <select id="recordBankSelect"><option value="">은행 선택</option></select>
-        <select id="recordBranchSelect"><option value="">지점 선택</option></select>
+        <select id="visitBankSelect"><option value="">은행 선택</option></select>
+        <select id="visitBranchSelect"><option value="">지점 선택</option></select>
       </div>
-      <div class="select-row" style="margin-top:8px;">
-        <select id="recordSellerSelect"><option value="">판매자 선택(안 하면 지점 전체)</option></select>
-      </div>
-      <textarea id="recordNoteText" class="note-textarea" rows="3" placeholder="예: 결혼함, 자녀 둘, 인천 출신, 환급률을 중시함, 이번달 승진"></textarea>
-      <button id="recordBySelectBtn" class="btn-primary" style="margin-top:8px;">선택한 내용으로 저장</button>
-      <div id="recordSelectStatus" class="status-box"></div>
+      <button id="logVisitBtn" class="btn-primary" style="margin-top:10px;">방문 입력</button>
+      <div id="visitStatus" class="status-box"></div>
     </div>
 
-    <div class="card" id="editCard" style="display:none;">
-      <h3>인식된 내용 확인 / 수정</h3>
-      <div id="editForm"></div>
-      <div class="btn-row" style="margin-top:14px;">
-        <button id="commitBtn" class="btn-primary">✓ 이대로 저장</button>
-        <button id="discardBtn" class="btn-ghost">취소 (저장 안 함)</button>
-      </div>
-    </div>
-
+    <!-- ② 판매자 정보 -->
     <div class="card">
-      <h3>지점 조회</h3>
-      <div class="card-subtitle first">음성으로 조회</div>
-      <div class="btn-row">
-        <button id="queryBtn" class="btn-neutral">🏦 지점명 말하기</button>
-        <button id="stopListenBtn" class="btn-stop">음성 듣기 종료</button>
-      </div>
-      <div class="hint">은행+지점(+판매자명)을 말한 뒤 "브리핑"이 들어간 말을 하면 바로 시작됩니다.</div>
-      <div class="cmd-line">
-        <span class="cmd-label">시작</span> "<b>지점</b>"·"<b>조회</b>"·"<b>브리핑</b>"<span class="sep">|</span>
-        <span class="cmd-label">완료</span> "<b>브리핑</b>"<span class="sep">|</span>
-        <span class="cmd-label">멈춤</span> "<b>오케이</b>"·"<b>여기까지</b>"(브리핑 듣는 중)
-      </div>
-      <div class="card-subtitle">선택하여 조회</div>
-      <div class="hint">은행/지점(+판매자)을 직접 선택해서 조회할 수 있습니다. 판매자를 선택하지 않으면 지점 전체 판매자 정보를 알려줍니다.</div>
+      <h3>판매자 정보</h3>
       <div class="select-row">
-        <select id="queryBankSelect"><option value="">은행 선택</option></select>
-        <select id="queryBranchSelect"><option value="">지점 선택</option></select>
+        <select id="sellerBankSelect"><option value="">은행 선택</option></select>
+        <select id="sellerBranchSelect"><option value="">지점 선택</option></select>
       </div>
-      <div class="select-row" style="margin-top:8px;">
-        <select id="querySellerSelect"><option value="">판매자 선택(안 하면 전체)</option></select>
+      <select class="sel-full" id="sellerSelect"><option value="">판매자 선택</option></select>
+
+      <div id="sellerFields" style="display:none; margin-top:14px;">
+        <div id="sellerMeta" class="seller-meta"></div>
+        <div class="field-group">
+          <label>가족관계</label>
+          <textarea id="field_가족관계" rows="2" placeholder="예: 기혼, 자녀 2명"></textarea>
+        </div>
+        <div class="field-group">
+          <label>자택</label>
+          <textarea id="field_자택" rows="2" placeholder="예: 인천 연수구"></textarea>
+        </div>
+        <div class="field-group">
+          <label>판매성향</label>
+          <textarea id="field_판매성향" rows="2" placeholder="예: 환급률 중시, 단기 납입 선호"></textarea>
+        </div>
+        <div class="field-group">
+          <label>방문이력 및 대화내용</label>
+          <textarea id="field_방문이력" rows="3" placeholder="예: 2025-06 신상품 소개, 고객 3명 DB 요청"></textarea>
+        </div>
+        <div class="field-group">
+          <label>기타정보</label>
+          <textarea id="field_기타대화내용" rows="2" placeholder="예: 이번달 승진 예정, 점심 같이함"></textarea>
+        </div>
+        <button id="saveSellerBtn" class="btn-primary" style="margin-top:14px;">기록하기</button>
+        <div id="sellerSaveStatus" class="status-box"></div>
       </div>
-      <button id="queryBySelectBtn" class="btn-neutral" style="margin-top:8px;">선택한 지점 조회</button>
-      <div id="queryStatus" class="status-box"></div>
+      <div id="sellerLoadStatus" class="status-box"></div>
     </div>
 
+    <!-- ③ 방문 달력 -->
     <div class="card">
       <h3>방문 달력</h3>
       <div class="cal-nav">
@@ -385,13 +260,14 @@
       <div id="calendarResult"></div>
     </div>
 
+    <!-- ④ 이번 달 방문 현황 -->
     <div class="card">
       <h3>이번 달 방문 현황</h3>
       <div id="dashboardSummary" class="dash-summary"></div>
-      <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:12px;">↻ 새로고침</button>
-      <button id="toggleDashboardListBtn" class="btn-neutral" style="margin-bottom:12px;">은행별 방문 현황 보기</button>
+      <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:10px;">↻ 새로고침</button>
+      <button id="toggleDashboardListBtn" class="btn-neutral" style="margin-bottom:10px;">은행별 방문 현황 보기</button>
       <div id="dashboardList" style="display:none;"></div>
-      <div class="hint">모수는 판매자정보 시트 K열(영업대상)에 체크된 지점 기준으로 집계됩니다.</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">모수: 판매자정보 시트 K열(영업대상) 체크 기준</div>
     </div>
 
     <details class="settings">
@@ -401,721 +277,207 @@
   </div>
 
   <script>
+    // ─── 공통 유틸 ───────────────────────────────────────────────────────────
     const urlInput = document.getElementById('webAppUrl');
-    const stopListenBtn = document.getElementById('stopListenBtn');
-    const editCard = document.getElementById('editCard');
-    const editForm = document.getElementById('editForm');
-    const recordStatusEl = document.getElementById('recordStatus');
-    const queryStatusEl = document.getElementById('queryStatus');
     urlInput.value = localStorage.getItem('webAppUrl') || '';
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
+    function getUrl() { return urlInput.value.trim(); }
 
-    // 정보 기록 카드의 날짜 선택 (음성/텍스트 입력 공용). 기본값은 오늘, 클릭하면 브라우저 기본 달력이 뜬다.
-    const recordDateInput = document.getElementById('recordDateInput');
     function todayLocalISO() {
       const d = new Date();
-      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    }
-    recordDateInput.value = todayLocalISO();
-    function getRecordDate() { return recordDateInput.value || todayLocalISO(); }
-
-    function stripSymbols(text) {
-      return String(text || '')
-        .replace(/[#*_`>{}\[\]\\|~^]/g, '')
-        .replace(/^[\s-]+/gm, '')
-        .replace(/[ \t]{2,}/g, ' ')
-        .trim();
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     }
 
-    function showStatus(el, text) {
-      el.textContent = stripSymbols(text);
+    function showStatus(el, text, isError) {
+      el.textContent = text;
+      el.style.color = isError ? 'var(--danger)' : 'var(--text)';
       el.classList.add('visible');
     }
-    function hideStatus(el) {
-      el.classList.remove('visible');
-      el.textContent = '';
-    }
-    const setRecordStatus = (t) => showStatus(recordStatusEl, t);
-    const clearRecordStatus = () => hideStatus(recordStatusEl);
-    const setQueryStatus = (t) => showStatus(queryStatusEl, t);
-    const clearQueryStatus = () => hideStatus(queryStatusEl);
+    function hideStatus(el) { el.classList.remove('visible'); el.textContent = ''; }
 
-    function speak(text) {
-      const u = new SpeechSynthesisUtterance(stripSymbols(text));
-      u.lang = 'ko-KR';
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
+    function escapeHtml(s) {
+      return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
     let jsonpCounter = 0;
     function jsonpRequest(baseUrl, params, onData) {
-      const callbackName = 'jsonpCb' + (jsonpCounter++);
-      const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과 (URL 또는 배포 설정을 확인하세요)' }); }, 20000);
-      function cleanup() { clearTimeout(timeout); delete window[callbackName]; script.remove(); }
-      window[callbackName] = (data) => { cleanup(); onData(data); };
-      const qs = new URLSearchParams({ ...params, callback: callbackName }).toString();
+      const cbName = 'jsonpCb' + (jsonpCounter++);
+      const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과' }); }, 20000);
+      function cleanup() { clearTimeout(timeout); delete window[cbName]; if (script.parentNode) script.remove(); }
+      window[cbName] = data => { cleanup(); onData(data); };
+      const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
       const script = document.createElement('script');
-      script.src = baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + qs;
+      script.src = baseUrl + (baseUrl.includes('?') ? '&' : '?') + qs;
       script.onerror = () => { cleanup(); onData({ error: '요청 실패 (URL을 확인하세요)' }); };
       document.body.appendChild(script);
     }
 
-    // ===================== 항상 듣고 있는 대기 모드 (버튼 없이 음성으로 시작) =====================
-    let appState = 'idle'; // idle | recording | querying
-    let wakeRecognition = null;
-    const START_RECORD_PHRASES = ['기록', '시작'];
-    const START_QUERY_PHRASES = ['지점', '조회', '브리핑'];
+    // ─── 날짜 입력 초기화 ────────────────────────────────────────────────────
+    const visitDateInput = document.getElementById('visitDateInput');
+    visitDateInput.value = todayLocalISO();
 
-    function pauseWakeListener() {
-      if (wakeRecognition) { try { wakeRecognition.onend = null; wakeRecognition.abort(); } catch (e) {} wakeRecognition = null; }
-    }
-
-    function resumeWakeListener() {
-      if (appState !== 'idle' || wakeRecognition) return;
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) return;
-      // 이전 인식 객체가 완전히 정리될 시간을 살짝 줘서 "이미 실행 중" 오류로 멈추는 것을 방지
-      setTimeout(() => {
-        if (appState !== 'idle' || wakeRecognition) return;
-        try {
-          const rec = new SpeechRecognition();
-          wakeRecognition = rec;
-          rec.lang = 'ko-KR';
-          rec.continuous = true;
-          rec.interimResults = false;
-          rec.onresult = (e) => {
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-              if (!e.results[i].isFinal) continue;
-              const t = e.results[i][0].transcript;
-              if (START_RECORD_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('recordBtn').click(); return; }
-              if (START_QUERY_PHRASES.some((p) => t.indexOf(p) !== -1)) { pauseWakeListener(); document.getElementById('queryBtn').click(); return; }
-            }
-          };
-          rec.onerror = () => {};
-          rec.onend = () => {
-            if (wakeRecognition === rec && appState === 'idle') {
-              wakeRecognition = null;
-              setTimeout(resumeWakeListener, 300);
-            }
-          };
-          rec.start();
-        } catch (e) {
-          wakeRecognition = null;
-          setTimeout(resumeWakeListener, 1000);
-        }
-      }, 300);
-    }
-
-    // ===================== 음성 기록 결과를 항목별로 화면에 보여주고, 수정 가능하게 함 =====================
-    const FIELD_SECTIONS = [
-      { title: '기본 정보 (수정해도 시트의 은행/지점/판매자는 유지됩니다)', fields: [
-        ['은행명', '은행명'], ['지점명', '지점명'], ['판매자명', '판매자명'], ['직책', '직책']
-      ] },
-      { title: '판매자 특성', fields: [
-        ['가족관계', '가족관계'], ['자택', '자택'], ['판매성향', '판매성향']
-      ] },
-      { title: '대화 내용', fields: [
-        ['방문이력', '방문이력'], ['기타대화내용', '기타대화내용']
-      ] }
-    ];
-    const PROPOSAL_FIELDS = [
-      ['상품명', '상품명'], ['가입금액', '가입금액'], ['고객성명', '고객성명'], ['고객나이', '고객나이'], ['고객성별', '고객성별']
-    ];
-
-    function renderEditForm(parsed) {
-      editForm.innerHTML = '';
-      FIELD_SECTIONS.forEach((section) => {
-        const div = document.createElement('div');
-        div.className = 'section-divider';
-        div.textContent = section.title;
-        editForm.appendChild(div);
-        section.fields.forEach(([key, label]) => editForm.appendChild(buildField(key, label, parsed[key] || '')));
-      });
-      const hasProposal = parsed.proposal_request && parsed.proposal_request['있음'];
-      const pDiv = document.createElement('div');
-      pDiv.className = 'section-divider';
-      pDiv.textContent = '제안서 요청' + (hasProposal ? '' : ' (감지되지 않음)');
-      editForm.appendChild(pDiv);
-      PROPOSAL_FIELDS.forEach(([key, label]) => {
-        const val = (parsed.proposal_request && parsed.proposal_request[key]) || '';
-        editForm.appendChild(buildField('proposal_' + key, label, val));
-      });
-      editCard.style.display = 'block';
-      editCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      startEditAutoFlow();
-    }
-
-    const SAVE_PHRASES = ['이대로 저장', '저장해줘', '저장할게', '저장'];
-    const DISCARD_PHRASES = ['저장 취소', '취소해줘', '저장하지마', '취소'];
-    let editAutoTimer = null;
-    let editVoiceCleanup = null;
-
-    function stopEditAutoFlow() {
-      if (editAutoTimer) { clearTimeout(editAutoTimer); editAutoTimer = null; }
-      if (editVoiceCleanup) { editVoiceCleanup(); editVoiceCleanup = null; }
-    }
-
-    function startEditAutoFlow() {
-      stopEditAutoFlow();
-      editAutoTimer = setTimeout(() => {
-        if (editCard.style.display !== 'none') {
-          setRecordStatus('5분간 응답이 없어 인식된 내용 그대로 저장합니다.');
-          document.getElementById('commitBtn').click();
-        }
-      }, 5 * 60 * 1000);
-
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) return;
-      let active = true;
-      const recog = new SpeechRecognition();
-      recog.lang = 'ko-KR';
-      recog.continuous = true;
-      recog.interimResults = false;
-      recog.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (!e.results[i].isFinal) continue;
-          const t = e.results[i][0].transcript;
-          if (DISCARD_PHRASES.some((p) => t.indexOf(p) !== -1)) { document.getElementById('discardBtn').click(); return; }
-          if (SAVE_PHRASES.some((p) => t.indexOf(p) !== -1)) { document.getElementById('commitBtn').click(); return; }
-        }
-      };
-      recog.onerror = () => {};
-      recog.onend = () => { if (active) { try { recog.start(); } catch (e) {} } };
-      try { recog.start(); } catch (e) {}
-      editVoiceCleanup = () => { active = false; try { recog.stop(); } catch (e) {} };
-    }
-
-    function buildField(key, label, value) {
-      const wrap = document.createElement('div');
-      wrap.className = 'field-group';
-      const labelEl = document.createElement('label');
-      labelEl.textContent = label;
-      const input = document.createElement('textarea');
-      input.id = 'field_' + key;
-      input.rows = 1;
-      input.value = stripSymbols(value);
-      input.addEventListener('input', () => { input.rows = Math.min(6, Math.max(1, Math.ceil(input.value.length / 28))); });
-      wrap.appendChild(labelEl);
-      wrap.appendChild(input);
-      return wrap;
-    }
-
-    function collectEditedData() {
-      const get = (key) => document.getElementById('field_' + key).value.trim();
-      return {
-        은행명: get('은행명'), 지점명: get('지점명'), 판매자명: get('판매자명'), 직책: get('직책'),
-        가족관계: get('가족관계'), 자택: get('자택'), 판매성향: get('판매성향'),
-        방문이력: get('방문이력'), 기타대화내용: get('기타대화내용'),
-        proposal_request: {
-          있음: !!(get('proposal_상품명') || get('proposal_고객성명')),
-          상품명: get('proposal_상품명'), 가입금액: get('proposal_가입금액'),
-          고객성명: get('proposal_고객성명'), 고객나이: get('proposal_고객나이'), 고객성별: get('proposal_고객성별')
-        }
-      };
-    }
-
-    function formatSaved(saved) {
-      if (!saved) return '';
-      const order = ['은행명', '지점명', '판매자명', '직책', '가족관계', '자택', '판매성향', '방문이력', '기타대화내용'];
-      const labels = order.filter((k) => saved[k]).map((k) => k + ': ' + stripSymbols(saved[k]));
-      if (saved.proposal_request && saved.proposal_request['있음']) {
-        labels.push('제안서 요청: 있음');
-        ['상품명', '가입금액', '고객성명', '고객나이', '고객성별'].forEach((k) => {
-          if (saved.proposal_request[k]) labels.push('  ' + k + ': ' + stripSymbols(saved.proposal_request[k]));
-        });
-      }
-      return labels.join('\n');
-    }
-
-    // handleCommit이 돌려주는 entry별 처리 결과(results)를 화면에 보여줄 텍스트로 정리
-    function formatSavedResults(results) {
-      if (!results || results.length === 0) return '';
-      return results.map((r) => {
-        const lead = [r.은행명, r.지점명, r.판매자명].filter(Boolean).join(' ') || '(은행/지점 불명확)';
-        if (r.error) return lead + ' - ' + r.error;
-        if (r.trivial) return lead + ' - 날짜만 기록됨';
-        const order = ['가족관계', '자택', '판매성향', '방문이력', '기타대화내용'];
-        const fields = order.filter((k) => r[k]).map((k) => '  ' + k + ': ' + stripSymbols(r[k]));
-        let line = lead;
-        if (fields.length) line += '\n' + fields.join('\n');
-        if (r.proposal_request && r.proposal_request['있음']) line += '\n  제안서 요청: 있음';
-        return line;
-      }).join('\n\n');
-    }
-
-    document.getElementById('commitBtn').onclick = () => {
-      stopEditAutoFlow();
-      const data = collectEditedData();
-      const url = urlInput.value.trim();
-      if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setRecordStatus('저장 중...');
-      jsonpRequest(url, { action: 'commit', data: JSON.stringify(data) }, (res) => {
-        if (res.error) { setRecordStatus('오류: ' + res.error); return; }
-        editCard.style.display = 'none';
-        setRecordStatus('기록 완료\n\n' + formatSaved(res.saved));
-        speak('기록했습니다.');
-        appState = 'idle';
-        resumeWakeListener();
-      });
-    };
-
-    document.getElementById('discardBtn').onclick = () => {
-      stopEditAutoFlow();
-      editCard.style.display = 'none';
-      setRecordStatus('저장하지 않고 취소했습니다.');
-      appState = 'idle';
-      resumeWakeListener();
-    };
-
-    // ===================== 지점 조회 음성 브리핑 =====================
-    const LISTEN_STOP_PHRASES = ['오케이', '여기까지'];
-
-    function speakSummary(text) {
-      const clean = stripSymbols(text);
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      let stopRec = null;
-      let active = true;
-      function cleanupAll() {
-        active = false;
-        stopListenBtn.classList.remove('visible');
-        if (stopRec) { try { stopRec.stop(); } catch (e) {} }
-        appState = 'idle';
-        resumeWakeListener();
-      }
-      stopListenBtn.classList.add('visible');
-      stopListenBtn.onclick = () => { speechSynthesis.cancel(); cleanupAll(); };
-      if (SpeechRecognition) {
-        stopRec = new SpeechRecognition();
-        stopRec.lang = 'ko-KR';
-        stopRec.continuous = true;
-        stopRec.interimResults = false;
-        stopRec.onresult = (e) => {
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (!e.results[i].isFinal) continue;
-            const t = e.results[i][0].transcript;
-            if (LISTEN_STOP_PHRASES.some((p) => t.indexOf(p) !== -1)) { speechSynthesis.cancel(); cleanupAll(); return; }
-          }
-        };
-        stopRec.onerror = () => {};
-        stopRec.onend = () => { if (active) { try { stopRec.start(); } catch (e) {} } };
-        try { stopRec.start(); } catch (e) {}
-      }
-      const u = new SpeechSynthesisUtterance(clean);
-      u.lang = 'ko-KR';
-      u.onend = cleanupAll;
-      u.onerror = cleanupAll;
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-    }
-
-    // ===================== 녹음/조회 음성 캡처 (공용) =====================
-    function createToggleRecorder(btn, onFinish, opts) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const setStatusFn = opts.setStatus;
-      if (!SpeechRecognition) {
-        setStatusFn('이 브라우저는 음성인식을 지원하지 않습니다. 크롬을 사용하세요.');
-        return { cancel: () => {}, start: () => {} };
-      }
-
-      let rec = null;
-      let listening = false;
-      let manualStop = false;
-      let cancelled = false;
-      let chunks = [];
-      const defaultLabel = btn.textContent;
-
-      function stripPhrase(text, phrases) {
-        let found = false;
-        let cleaned = text;
-        phrases.forEach((p) => {
-          if (cleaned.indexOf(p) !== -1) { found = true; cleaned = cleaned.replace(p, '').trim(); }
-        });
-        return { found, cleaned };
-      }
-
-      function finish() { manualStop = true; if (rec) rec.stop(); }
-      function cancel() {
-        if (!listening) return;
-        cancelled = true;
-        manualStop = true;
-        if (rec) rec.stop();
-      }
-
-      function start() {
-        pauseWakeListener();
-        appState = opts.stateName;
-        chunks = [];
-        manualStop = false;
-        cancelled = false;
-        listening = true;
-        btn.textContent = opts.listeningLabel || '⏹ 입력완료 (다시 누르면 종료)';
-        setStatusFn('듣고 있습니다...');
-
-        rec = new SpeechRecognition();
-        rec.lang = 'ko-KR';
-        rec.continuous = true;
-        rec.interimResults = true;
-
-        function pushChunk(cleaned) {
-          if (!cleaned) return;
-          const last = chunks[chunks.length - 1] || '';
-          if (cleaned === last) return;
-          if (last && last.indexOf(cleaned) !== -1) return; // 새 조각이 이전 조각에 이미 포함됨 (같은 말 중복 인식) - 무시
-          if (last && cleaned.indexOf(last) !== -1) { chunks[chunks.length - 1] = cleaned; return; } // 새 조각이 이전 조각을 포함하는 더 긴/보정된 버전 - 교체
-          chunks.push(cleaned);
-        }
-
-        rec.onresult = (e) => {
-          let interim = '';
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (!e.results[i].isFinal) { interim = e.results[i][0].transcript; continue; }
-            const raw = e.results[i][0].transcript;
-            const cancelCheck = stripPhrase(raw, opts.cancelPhrases);
-            if (cancelCheck.found) { cancel(); return; }
-            const { found: stopped, cleaned } = stripPhrase(raw, opts.stopPhrases);
-            pushChunk(cleaned);
-            if (stopped) { finish(); return; }
-          }
-          const liveText = interim ? chunks.join(' ') + ' ' + interim : chunks.join(' ');
-          setStatusFn('듣고 있습니다...\n' + liveText.trim());
-        };
-
-        rec.onerror = (e) => { if (e.error !== 'no-speech') setStatusFn('인식 오류: ' + e.error); };
-
-        rec.onend = () => {
-          if (!manualStop && listening) { rec.start(); return; }
-          listening = false;
-          btn.textContent = defaultLabel;
-          if (cancelled) {
-            setStatusFn('취소했습니다.');
-            appState = 'idle';
-            resumeWakeListener();
-            return;
-          }
-          const fullText = chunks.join(' ').trim();
-          if (fullText) onFinish(fullText);
-          else { setStatusFn('인식된 내용이 없습니다.'); appState = 'idle'; resumeWakeListener(); }
-        };
-
-        rec.start();
-      }
-
-      btn.onclick = () => { if (!listening) start(); else finish(); };
-      return { cancel, start };
-    }
-
-    function buildEntryExtra(e) {
-      const extra = [];
-      if (e['가족관계']) extra.push('가족관계는 ' + e['가족관계']);
-      if (e['자택']) extra.push('자택은 ' + e['자택']);
-      if (e['판매성향']) extra.push('판매성향은 ' + e['판매성향']);
-      if (e['방문이력']) extra.push('방문이력은 ' + e['방문이력']);
-      if (e['기타대화내용']) extra.push('기타로 ' + e['기타대화내용']);
-      return extra;
-    }
-
-    // 내용이 있는 entry는 각각 풀어서 말하고, 내용 없이 은행+지점만 언급된 entry들은
-    // 한 번에 나열한 뒤 마지막에 "입력내용없어 날짜만 기록됩니다"를 한 번만 붙인다.
-    function buildBriefSummary(parsed) {
-      const entries = (parsed && parsed.entries) || [];
-      if (entries.length === 0) return '인식된 내용이 없습니다.';
-
-      const parts = [];
-      const trivialLeads = [];
-      entries.forEach((e) => {
-        const lead = ['은행명', '지점명', '판매자명', '직책'].map((k) => e[k]).filter(Boolean).join(' ');
-        const extra = buildEntryExtra(e);
-        if (extra.length === 0) {
-          trivialLeads.push(lead || '내용');
-          return;
-        }
-        let body = lead ? lead + '으로 인식했습니다.' : '내용을 인식했습니다.';
-        body += ' ' + extra.join(', ') + '.';
-        parts.push(body);
-      });
-      if (trivialLeads.length) {
-        parts.push(trivialLeads.join(', ') + ' 입력내용없어 날짜만 기록됩니다.');
-      }
-      return parts.join(' ');
-    }
-
-    const CONFIRM_PHRASES = ['이상없어', '이상 없어', '맞아', '맞습니다', '맞어', '오케이', '저장', '괜찮아', '괜찮습니다', '응', '네'];
-    const EDIT_TRIGGER_PHRASES = ['수정', '정정', '다시'];
-    const CANCEL_PHRASES = ['취소'];
-
-    // 확인/수정 단계에서도 "취소"를 말하거나 취소 버튼을 누르면 즉시 입력을 강제 종료할 수 있도록,
-    // 현재 진행 중인 speakThenListen을 중단시키는 함수를 여기에 등록해둔다.
-    let recordFlowAbort = null;
-
-    function cancelRecordFlow() {
-      if (recordFlowAbort) { const fn = recordFlowAbort; recordFlowAbort = null; fn(); }
-    }
-
-    // AI가 말하는 도중이라도 "맞아/저장/수정/취소" 등을 바로 말하면 끼어들어 처리됨 (말이 끝날 때까지 안 기다려도 됨)
-    function speakThenListen(message, onResult) {
-      setRecordStatus(message);
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const u = new SpeechSynthesisUtterance(stripSymbols(message));
-      u.lang = 'ko-KR';
-      let done = false;
-      let rec = null;
-
-      function finishOnce(text) {
-        if (done) return;
-        done = true;
-        recordFlowAbort = null;
-        speechSynthesis.cancel();
-        if (rec) { try { rec.onend = null; rec.abort(); } catch (e) {} }
-        onResult(text);
-      }
-
-      recordFlowAbort = () => finishOnce('취소');
-
-      if (SpeechRecognition) {
-        rec = new SpeechRecognition();
-        rec.lang = 'ko-KR';
-        rec.continuous = true;
-        rec.interimResults = false;
-        rec.onresult = (e) => {
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (!e.results[i].isFinal) continue;
-            finishOnce(e.results[i][0].transcript);
-            return;
-          }
-        };
-        rec.onerror = () => {};
-        rec.onend = () => { if (!done) { try { rec.start(); } catch (e) {} } };
-        try { rec.start(); } catch (e) {}
-      } else {
-        u.onend = () => finishOnce('');
-      }
-
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-    }
-
-    // 음성 "취소" 또는 취소 버튼으로 호출됨: 저장하지 않고 입력 플로우를 즉시 끝낸다.
-    function abortRecordFlow() {
-      speechSynthesis.cancel();
-      setRecordStatus('취소했습니다. 저장하지 않았습니다.');
-      speak('취소했습니다.');
-      appState = 'idle';
-      resumeWakeListener();
-    }
-
-    function commitParsedData(data) {
-      const url = urlInput.value.trim();
-      if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setRecordStatus('저장 중...');
-      const payload = Object.assign({}, data, { date: getRecordDate() });
-      jsonpRequest(url, { action: 'commit', data: JSON.stringify(payload) }, (res) => {
-        if (res.error) { setRecordStatus('오류: ' + res.error); appState = 'idle'; resumeWakeListener(); return; }
-        setRecordStatus('기록 완료\n\n' + formatSavedResults(res.results));
-        speak('기록했습니다.');
-        appState = 'idle';
-        resumeWakeListener();
-      });
-    }
-
-    // 음성으로만 끝까지 확인: 요약을 들려주고 "맞아/저장"이면 바로 저장, "수정/정정/다시"면 정정 내용을 다시 듣고 반영한 뒤 또 확인.
-    function confirmLoop(originalTranscript, parsed) {
-      const msg = buildBriefSummary(parsed) + ' 이상 없으면 맞아 또는 저장이라고 말씀해주시고, 고칠 부분이 있으면 수정, 그만하시려면 취소라고 말씀해주세요.';
-      speakThenListen(msg, (responseText) => {
-        if (CANCEL_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
-          abortRecordFlow();
-          return;
-        }
-        if (CONFIRM_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
-          commitParsedData(parsed);
-          return;
-        }
-        if (EDIT_TRIGGER_PHRASES.some((p) => responseText.indexOf(p) !== -1)) {
-          speakThenListen('수정할 내용을 말씀해주세요.', (correctionText) => {
-            if (CANCEL_PHRASES.some((p) => correctionText.indexOf(p) !== -1)) {
-              abortRecordFlow();
-              return;
-            }
-            const url = urlInput.value.trim();
-            setRecordStatus('정정 내용을 반영하는 중...\n"' + correctionText + '"');
-            jsonpRequest(url, { action: 'reparse', original: originalTranscript, correction: correctionText }, (data2) => {
-              if (data2.error) { setRecordStatus('오류: ' + data2.error); confirmLoop(originalTranscript, parsed); return; }
-              confirmLoop(originalTranscript, data2.parsed);
-            });
-          });
-          return;
-        }
-        // 애매하게 들렸으면 같은 내용으로 다시 확인
-        confirmLoop(originalTranscript, parsed);
-      });
-    }
-
-    function handleRecordTranscript(text) {
-      const url = urlInput.value.trim();
-      if (!url) { setRecordStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setRecordStatus('인식 완료. 확인 중...\n"' + text + '"');
-      jsonpRequest(url, { action: 'record', text }, (data) => {
-        if (data.error) { setRecordStatus('오류: ' + data.error); appState = 'idle'; resumeWakeListener(); return; }
-        confirmLoop(text, data.parsed);
-      });
-    }
-
-    function escapeHtml(s) {
-      return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
-
-    // 판매자 이름/직책과 저장된 정보는 굵게, 정보가 없는 항목은 옅게 표시. 구조화 데이터(data.sellers)가 없으면 false를 돌려줘서 호출부가 평문으로 표시하게 한다.
-    function renderSellerInfo(data) {
-      if (!data.sellers || data.sellers.length === 0) return false;
-      const fieldDefs = [['가족관계', '가족관계'], ['자택', '자택'], ['판매성향', '판매성향'], ['방문이력', '방문이력'], ['기타대화내용', '기타']];
-      const blocks = data.sellers.map((s) => {
-        const nameLine = '<div class="info-line">' + escapeHtml(stripSymbols(s.판매자명)) +
-          (s.직책 ? ' ' + escapeHtml(stripSymbols(s.직책)) : '') + '</div>';
-        const lines = fieldDefs.map(([key, label]) => {
-          const v = String(s[key] || '').trim();
-          if (v) return '<div class="info-line">' + escapeHtml(label) + ': ' + escapeHtml(stripSymbols(v)).replace(/\n/g, '<br>') + '</div>';
-          return '<div class="info-empty">' + escapeHtml(label) + ': 정보 없음</div>';
-        }).join('');
-        return '<div class="seller-block">' + nameLine + lines + '</div>';
-      });
-      queryStatusEl.innerHTML = blocks.join('<hr class="seller-divider">');
-      queryStatusEl.classList.add('visible');
-      return true;
-    }
-
-    function handleQueryTranscript(text) {
-      const url = urlInput.value.trim();
-      if (!url) { setQueryStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      setQueryStatus('조회 중...\n"' + text + '"');
-      jsonpRequest(url, { action: 'query', text }, (data) => {
-        if (data.error) { setQueryStatus('오류: ' + data.error); appState = 'idle'; resumeWakeListener(); return; }
-        if (!renderSellerInfo(data)) setQueryStatus(data.summary);
-        speakSummary(data.summary);
-      });
-    }
-
-    const recordRecorder = createToggleRecorder(document.getElementById('recordBtn'), handleRecordTranscript, {
-      setStatus: setRecordStatus,
-      stopPhrases: ['완료', '여기까지'],
-      cancelPhrases: ['취소'],
-      stateName: 'recording',
-      listeningLabel: '⏹ 입력완료 (다시 누르면 종료)'
-    });
-    // ===================== 은행/지점(+판매자) 드롭다운으로 직접 선택 (조회 카드 + 기록 카드 공용) =====================
+    // ─── 은행/지점/판매자 드롭다운 ───────────────────────────────────────────
     let branchListData = [];
 
-    function setupBranchPicker(bankSelect, branchSelect, sellerSelect, sellerPlaceholder) {
+    function makePicker(bankSel, branchSel, sellerSel, sellerPlaceholder, onSellerChange) {
       function updateSellers() {
-        if (!sellerSelect) return;
-        const bank = bankSelect.value;
-        const branch = branchSelect.value;
-        sellerSelect.innerHTML = '<option value="">' + sellerPlaceholder + '</option>';
-        const url = urlInput.value.trim();
+        if (!sellerSel) return;
+        const bank = bankSel.value, branch = branchSel.value;
+        sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>`;
+        const url = getUrl();
         if (!bank || !branch || !url) return;
-        jsonpRequest(url, { action: 'listSellers', bank, branch }, (data) => {
+        jsonpRequest(url, { action: 'listSellers', bank, branch }, data => {
           if (data.error || !data.sellers) return;
-          sellerSelect.innerHTML = '<option value="">' + sellerPlaceholder + '</option>' +
-            data.sellers.map((s) => '<option value="' + s.판매자명 + '">' + stripSymbols(s.판매자명 + (s.직책 ? ' ' + s.직책 : '')) + '</option>').join('');
+          sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>` +
+            data.sellers.map(s => `<option value="${escapeHtml(s.판매자명)}">${escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))}</option>`).join('');
         });
       }
       function updateBranches() {
-        const bank = bankSelect.value;
-        const branches = branchListData.filter((b) => !bank || b.은행명 === bank);
-        branchSelect.innerHTML = '<option value="">지점 선택</option>' +
-          branches.map((b) => '<option value="' + b.지점명 + '">' + stripSymbols(b.지점명) + '</option>').join('');
+        const bank = bankSel.value;
+        const branches = branchListData.filter(b => !bank || b.은행명 === bank);
+        branchSel.innerHTML = '<option value="">지점 선택</option>' +
+          branches.map(b => `<option value="${escapeHtml(b.지점명)}">${escapeHtml(b.지점명)}</option>`).join('');
         updateSellers();
       }
-      function populateBanks() {
-        const banks = [...new Set(branchListData.map((b) => b.은행명))];
-        bankSelect.innerHTML = '<option value="">은행 선택</option>' +
-          banks.map((b) => '<option value="' + b + '">' + stripSymbols(b) + '</option>').join('');
-        updateBranches();
-      }
-      bankSelect.addEventListener('change', updateBranches);
-      if (sellerSelect) branchSelect.addEventListener('change', updateSellers);
-      return { populateBanks };
+      bankSel.addEventListener('change', updateBranches);
+      branchSel.addEventListener('change', updateSellers);
+      if (sellerSel && onSellerChange) sellerSel.addEventListener('change', onSellerChange);
+      return {
+        populate() {
+          const banks = [...new Set(branchListData.map(b => b.은행명))];
+          bankSel.innerHTML = '<option value="">은행 선택</option>' +
+            banks.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
+          updateBranches();
+        }
+      };
     }
 
-    const queryPicker = setupBranchPicker(
-      document.getElementById('queryBankSelect'), document.getElementById('queryBranchSelect'),
-      document.getElementById('querySellerSelect'), '판매자 선택(안 하면 전체)'
-    );
-    const recordPicker = setupBranchPicker(
-      document.getElementById('recordBankSelect'), document.getElementById('recordBranchSelect'),
-      document.getElementById('recordSellerSelect'), '판매자 선택(안 하면 지점 전체)'
+    const visitPicker = makePicker(
+      document.getElementById('visitBankSelect'),
+      document.getElementById('visitBranchSelect'),
+      null, '', null
     );
 
-    function loadBranchList() {
-      const url = urlInput.value.trim();
-      if (!url) return;
-      jsonpRequest(url, { action: 'listBranches' }, (data) => {
-        if (data.error || !data.branches) return;
-        branchListData = data.branches;
-        queryPicker.populateBanks();
-        recordPicker.populateBanks();
+    // 판매자 드롭다운 변경 시 기존 정보 로드
+    function onSellerSelected() {
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const fieldsDiv  = document.getElementById('sellerFields');
+      const loadStatus = document.getElementById('sellerLoadStatus');
+
+      hideStatus(loadStatus);
+      if (!seller) { fieldsDiv.style.display = 'none'; return; }
+
+      // 필드 초기화 후 표시
+      FIELD_KEYS.forEach(k => {
+        const ta = document.getElementById('field_' + k);
+        ta.value = '';
+        ta.classList.remove('has-data');
+      });
+      document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller;
+      fieldsDiv.style.display = 'block';
+      hideStatus(document.getElementById('sellerSaveStatus'));
+
+      const url = getUrl();
+      if (!url || !bank || !branch) return;
+
+      showStatus(loadStatus, '기존 정보 불러오는 중...');
+      jsonpRequest(url, { action: 'getSellerInfo', bank, branch, seller }, data => {
+        hideStatus(loadStatus);
+        if (data.error) { showStatus(loadStatus, '오류: ' + data.error, true); return; }
+        if (data.ok && data.seller) {
+          const s = data.seller;
+          FIELD_KEYS.forEach(k => {
+            const ta = document.getElementById('field_' + k);
+            const v = s[k] || '';
+            ta.value = v;
+            if (v) ta.classList.add('has-data');
+          });
+          if (s.직책) {
+            document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller + ' ' + s.직책;
+          }
+        }
       });
     }
 
-    document.getElementById('queryBySelectBtn').onclick = () => {
-      const url = urlInput.value.trim();
-      const bank = document.getElementById('queryBankSelect').value;
-      const branch = document.getElementById('queryBranchSelect').value;
-      const seller = document.getElementById('querySellerSelect').value;
-      if (!url) { setQueryStatus('먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      if (!bank || !branch) { setQueryStatus('은행과 지점을 모두 선택해주세요.'); return; }
-      setQueryStatus('조회 중...\n' + bank + ' ' + branch + (seller ? ' ' + seller : ''));
-      jsonpRequest(url, { action: 'queryByBranch', bank, branch, seller }, (data) => {
-        if (data.error) { setQueryStatus('오류: ' + data.error); return; }
-        if (!renderSellerInfo(data)) setQueryStatus(data.summary);
-        speakSummary(data.summary);
+    const sellerPicker = makePicker(
+      document.getElementById('sellerBankSelect'),
+      document.getElementById('sellerBranchSelect'),
+      document.getElementById('sellerSelect'),
+      '판매자 선택',
+      onSellerSelected
+    );
+
+    // 은행/지점 바뀌면 판매자 필드 숨김
+    ['sellerBankSelect','sellerBranchSelect'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        document.getElementById('sellerFields').style.display = 'none';
+        hideStatus(document.getElementById('sellerLoadStatus'));
+      });
+    });
+
+    const FIELD_KEYS = ['가족관계','자택','판매성향','방문이력','기타대화내용'];
+
+    function loadBranchList() {
+      const url = getUrl();
+      if (!url) return;
+      jsonpRequest(url, { action: 'listBranches' }, data => {
+        if (data.error || !data.branches) return;
+        branchListData = data.branches;
+        visitPicker.populate();
+        sellerPicker.populate();
+      });
+    }
+
+    // ─── ① 방문 입력 ─────────────────────────────────────────────────────────
+    document.getElementById('logVisitBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('visitBankSelect').value;
+      const branch = document.getElementById('visitBranchSelect').value;
+      const date   = visitDateInput.value || todayLocalISO();
+      const statusEl = document.getElementById('visitStatus');
+      if (!url)            { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
+      if (!bank || !branch){ showStatus(statusEl, '은행과 지점을 모두 선택해주세요.', true); return; }
+      showStatus(statusEl, '입력 중...');
+      jsonpRequest(url, { action: 'logVisit', bank, branch, date }, data => {
+        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
+        showStatus(statusEl, `✓ ${data.dateLabel}  ${bank} ${branch}  방문 입력 완료`);
       });
     };
 
-    document.getElementById('recordBySelectBtn').onclick = () => {
-      const url = urlInput.value.trim();
-      const bank = document.getElementById('recordBankSelect').value;
-      const branch = document.getElementById('recordBranchSelect').value;
-      const seller = document.getElementById('recordSellerSelect').value;
-      const noteEl = document.getElementById('recordNoteText');
-      const text = noteEl.value.trim();
-      const statusEl = document.getElementById('recordSelectStatus');
-      if (!url) { showStatus(statusEl, '먼저 연결 설정에서 Apps Script 웹앱 URL을 입력하세요.'); return; }
-      if (!bank || !branch) { showStatus(statusEl, '은행과 지점을 모두 선택해주세요.'); return; }
-      if (!text) { showStatus(statusEl, '입력할 내용이 없습니다.'); return; }
+    // ─── ② 판매자 정보 저장 ──────────────────────────────────────────────────
+    document.getElementById('saveSellerBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const statusEl = document.getElementById('sellerSaveStatus');
+      if (!url)                  { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
+      if (!bank || !branch || !seller) { showStatus(statusEl, '은행, 지점, 판매자를 모두 선택해주세요.', true); return; }
       showStatus(statusEl, '저장 중...');
-      const date = getRecordDate();
-      jsonpRequest(url, { action: 'recordForSeller', bank, branch, seller, text, date }, (data) => {
-        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message)); return; }
-        showStatus(statusEl, '저장 완료\n\n' + formatSavedResults(data.results));
-        noteEl.value = '';
+      const payload = { bank, branch, seller, date: todayLocalISO() };
+      FIELD_KEYS.forEach(k => { payload[k] = document.getElementById('field_' + k).value.trim(); });
+      jsonpRequest(url, { action: 'saveSellerFields', data: JSON.stringify(payload) }, data => {
+        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
+        showStatus(statusEl, '✓ 저장 완료');
+        FIELD_KEYS.forEach(k => {
+          const ta = document.getElementById('field_' + k);
+          if (ta.value) ta.classList.add('has-data');
+        });
       });
     };
 
     loadBranchList();
 
-    const queryRecorder = createToggleRecorder(document.getElementById('queryBtn'), handleQueryTranscript, {
-      setStatus: setQueryStatus,
-      stopPhrases: ['브리핑'],
-      cancelPhrases: [],
-      stateName: 'querying',
-      listeningLabel: '⏹ 브리핑 (다시 누르면 종료)'
-    });
-    document.getElementById('cancelBtn').onclick = () => {
-      recordRecorder.cancel(); // 녹음 중이면 그 단계에서 취소됨
-      cancelRecordFlow(); // 확인/수정 단계(speakThenListen 중)면 거기서 취소됨
-    };
-
-    const autostart = new URLSearchParams(location.search).get('autostart');
-    if (autostart === 'record') document.getElementById('recordBtn').click();
-    else if (autostart === 'query') document.getElementById('queryBtn').click();
-    else resumeWakeListener();
-
-    // ===================== 방문 달력 =====================
+    // ─── ③ 방문 달력 ─────────────────────────────────────────────────────────
     let calMonthOffset = 0;
-    const calGrid = document.getElementById('calGrid');
+    const calGrid      = document.getElementById('calGrid');
     const calDayLabels = document.getElementById('calDayLabels');
-    const calTitle = document.getElementById('calTitle');
+    const calTitle     = document.getElementById('calTitle');
     const calendarResult = document.getElementById('calendarResult');
-    ['일', '월', '화', '수', '목', '금', '토'].forEach((d) => {
+
+    ['일','월','화','수','목','금','토'].forEach(d => {
       const el = document.createElement('div');
       el.className = 'cal-day-label';
       el.textContent = d;
@@ -1126,49 +488,65 @@
       const base = new Date();
       base.setDate(1);
       base.setMonth(base.getMonth() + calMonthOffset);
-      const year = base.getFullYear();
-      const month = base.getMonth();
-      calTitle.textContent = year + '년 ' + (month + 1) + '월';
+      const year = base.getFullYear(), month = base.getMonth();
+      calTitle.textContent = year + '년 ' + (month+1) + '월';
       const firstDay = new Date(year, month, 1).getDay();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const daysInMonth = new Date(year, month+1, 0).getDate();
       calGrid.innerHTML = '';
       for (let i = 0; i < firstDay; i++) {
-        const empty = document.createElement('div');
-        empty.className = 'cal-cell empty';
-        calGrid.appendChild(empty);
+        const e = document.createElement('div'); e.className = 'cal-cell empty'; calGrid.appendChild(e);
       }
       for (let d = 1; d <= daysInMonth; d++) {
         const cell = document.createElement('div');
         cell.className = 'cal-cell';
         cell.textContent = d;
-        const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        const dateStr = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
         cell.onclick = () => selectCalendarDate(dateStr, cell);
         calGrid.appendChild(cell);
       }
     }
 
     function selectCalendarDate(dateStr, cell) {
-      document.querySelectorAll('.cal-cell.selected').forEach((c) => c.classList.remove('selected'));
+      document.querySelectorAll('.cal-cell.selected').forEach(c => c.classList.remove('selected'));
       cell.classList.add('selected');
-      const url = urlInput.value.trim();
-      if (!url) { calendarResult.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
+      const url = getUrl();
+      if (!url) { calendarResult.textContent = '연결 설정에서 URL을 먼저 입력하세요.'; return; }
       calendarResult.textContent = '불러오는 중...';
-      jsonpRequest(url, { action: 'calendarDay', date: dateStr }, (data) => {
+      jsonpRequest(url, { action: 'calendarDay', date: dateStr }, data => {
         if (data.error) { calendarResult.textContent = '오류: ' + data.error; return; }
-        if (!data.visits || data.visits.length === 0) { calendarResult.textContent = dateStr + ' 방문 기록이 없습니다.'; return; }
+        if (!data.visits || data.visits.length === 0) {
+          calendarResult.textContent = dateStr + ' 방문 기록이 없습니다.'; return;
+        }
         calendarResult.innerHTML = '';
         const header = document.createElement('div');
-        header.style.fontWeight = '700';
-        header.style.marginBottom = '8px';
-        header.textContent = '방문지점 : ' + data.branchCount + '개 지점 (판매자 ' + data.sellerCount + '명)';
+        header.style.cssText = 'font-weight:700;margin-bottom:10px;font-size:13.5px;';
+        header.textContent = '방문 ' + data.branchCount + '개 지점 (판매자 ' + data.sellerCount + '명)';
         calendarResult.appendChild(header);
-        data.visits.forEach((v) => {
+
+        // 지점별로 묶어서 번호 매기기 (지점 기준으로 넘버링, 판매자는 들여쓰기)
+        const branchMap = new Map();
+        data.visits.forEach(v => {
+          const key = v.은행명 + '|' + v.지점명;
+          if (!branchMap.has(key)) branchMap.set(key, { 은행명: v.은행명, 지점명: v.지점명, sellers: [] });
+          if (v.판매자명) branchMap.get(key).sellers.push(v);
+        });
+
+        let num = 1;
+        branchMap.forEach(g => {
           const div = document.createElement('div');
           div.className = 'visit-item';
-          let line = v.은행명 + ' ' + v.지점명;
-          if (v.판매자명) line += ' - ' + v.판매자명;
-          if (v.방문이력) line += ' (' + v.방문이력 + ')';
-          div.textContent = stripSymbols(line);
+          const numEl = document.createElement('div');
+          numEl.className = 'visit-num';
+          numEl.textContent = num++ + '.';
+          const textEl = document.createElement('div');
+          textEl.className = 'visit-text';
+          textEl.innerHTML = '<strong>' + escapeHtml(g.은행명 + ' ' + g.지점명) + '</strong>';
+          if (g.sellers.length > 0) {
+            textEl.innerHTML += '<div class="visit-seller">' +
+              g.sellers.map(s => escapeHtml(s.판매자명)).join(', ') + '</div>';
+          }
+          div.appendChild(numEl);
+          div.appendChild(textEl);
           calendarResult.appendChild(div);
         });
       });
@@ -1178,72 +556,37 @@
     document.getElementById('calNext').onclick = () => { calMonthOffset++; renderCalendar(); };
     renderCalendar();
 
-    // ===================== 대시보드 (은행별 모수/당월방문/미방문) =====================
-    const dashboardList = document.getElementById('dashboardList');
+    // ─── ④ 대시보드 ───────────────────────────────────────────────────────────
+    const dashboardList    = document.getElementById('dashboardList');
     const dashboardSummary = document.getElementById('dashboardSummary');
 
     function renderDashboardSummary(banks) {
-      const totals = banks.reduce((acc, b) => {
-        acc.모수 += b.모수; acc.당월방문 += b.당월방문; acc.미방문 += b.미방문;
-        return acc;
-      }, { 모수: 0, 당월방문: 0, 미방문: 0 });
-      const pct = totals.모수 > 0 ? Math.round((totals.당월방문 / totals.모수) * 100) : 0;
-
+      const totals = banks.reduce((a,b) => { a.모수+=b.모수; a.당월방문+=b.당월방문; a.미방문+=b.미방문; return a; }, {모수:0,당월방문:0,미방문:0});
+      const pct = totals.모수>0 ? Math.round((totals.당월방문/totals.모수)*100) : 0;
       dashboardSummary.innerHTML =
         '<div class="dash-summary-numbers">' +
-          '<div class="dash-summary-item total"><div class="num">' + totals.모수 + '</div><div class="lbl">총 모수</div></div>' +
-          '<div class="dash-summary-item visited"><div class="num">' + totals.당월방문 + '</div><div class="lbl">방문</div></div>' +
-          '<div class="dash-summary-item unvisited"><div class="num">' + totals.미방문 + '</div><div class="lbl">미방문</div></div>' +
+          '<div class="dash-summary-item total"><div class="num">'+totals.모수+'</div><div class="lbl">총 모수</div></div>' +
+          '<div class="dash-summary-item visited"><div class="num">'+totals.당월방문+'</div><div class="lbl">방문</div></div>' +
+          '<div class="dash-summary-item unvisited"><div class="num">'+totals.미방문+'</div><div class="lbl">미방문</div></div>' +
         '</div>' +
-        '<div class="dash-summary-track"><div class="dash-summary-fill" style="width:' + pct + '%;"></div></div>' +
-        '<div class="dash-summary-pct">' + pct + '% 진행</div>';
-    }
-
-    function loadDashboard() {
-      const url = urlInput.value.trim();
-      if (!url) { dashboardList.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
-      dashboardSummary.innerHTML = '';
-      dashboardList.textContent = '불러오는 중...';
-      jsonpRequest(url, { action: 'dashboard' }, (data) => {
-        if (data.error) { dashboardList.textContent = '오류: ' + data.error; return; }
-        dashboardList.innerHTML = '';
-        if (!data.banks || data.banks.length === 0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
-        renderDashboardSummary(data.banks);
-        data.banks.forEach((b) => dashboardList.appendChild(buildDashboardBank(b)));
-      });
+        '<div class="dash-summary-track"><div class="dash-summary-fill" style="width:'+pct+'%"></div></div>' +
+        '<div class="dash-summary-pct">'+pct+'% 진행</div>';
     }
 
     function buildDashboardBank(b) {
-      const wrap = document.createElement('div');
-      wrap.className = 'dash-bank';
-      const name = document.createElement('div');
-      name.className = 'dash-bank-name';
-      name.textContent = stripSymbols(b.은행명);
+      const wrap = document.createElement('div'); wrap.className = 'dash-bank';
+      const name = document.createElement('div'); name.className = 'dash-bank-name'; name.textContent = b.은행명;
       wrap.appendChild(name);
-
-      const track = document.createElement('div');
-      track.className = 'dash-bar-track';
-      const pct = b.모수 > 0 ? Math.round((b.당월방문 / b.모수) * 100) : 0;
-      const fill = document.createElement('div');
-      fill.className = 'dash-bar-fill';
-      fill.style.width = pct + '%';
-      const label = document.createElement('div');
-      label.className = 'dash-bar-label';
-      label.textContent = b.당월방문 + ' / ' + b.모수 + ' (' + pct + '%)';
-      track.appendChild(fill);
-      track.appendChild(label);
-      wrap.appendChild(track);
-
-      const stats = document.createElement('div');
-      stats.className = 'dash-stats';
-      stats.innerHTML = '<span>모수 ' + b.모수 + '</span><span>당월방문 ' + b.당월방문 + '</span><span>미방문 ' + b.미방문 + '</span>';
+      const track = document.createElement('div'); track.className = 'dash-bar-track';
+      const pct = b.모수>0 ? Math.round((b.당월방문/b.모수)*100) : 0;
+      const fill = document.createElement('div'); fill.className = 'dash-bar-fill'; fill.style.width = pct+'%';
+      const lbl = document.createElement('div'); lbl.className = 'dash-bar-label'; lbl.textContent = b.당월방문+' / '+b.모수+' ('+pct+'%)';
+      track.appendChild(fill); track.appendChild(lbl); wrap.appendChild(track);
+      const stats = document.createElement('div'); stats.className = 'dash-stats';
+      stats.innerHTML = '<span>모수 '+b.모수+'</span><span>당월방문 '+b.당월방문+'</span><span>미방문 '+b.미방문+'</span>';
       wrap.appendChild(stats);
-
-      const detail = document.createElement('div');
-      detail.className = 'branch-detail';
-      detail.style.display = 'none';
+      const detail = document.createElement('div'); detail.className = 'branch-detail'; detail.style.display = 'none';
       wrap.appendChild(detail);
-
       let loaded = false;
       name.onclick = () => {
         if (detail.style.display !== 'none') { detail.style.display = 'none'; return; }
@@ -1251,31 +594,43 @@
         if (loaded) return;
         loaded = true;
         detail.textContent = '불러오는 중...';
-        const url = urlInput.value.trim();
-        if (!url) { detail.textContent = '먼저 연결 설정에서 URL을 입력하세요.'; return; }
-        jsonpRequest(url, { action: 'dashboardBank', bank: b.은행명 }, (data) => {
+        const url = getUrl();
+        if (!url) { detail.textContent = 'URL을 먼저 입력하세요.'; return; }
+        jsonpRequest(url, { action: 'dashboardBank', bank: b.은행명 }, data => {
           detail.innerHTML = '';
-          if (data.error) { detail.textContent = '오류: ' + data.error; return; }
-          if (!data.branches || data.branches.length === 0) { detail.textContent = '지점 정보가 없습니다.'; return; }
-          data.branches.forEach((br) => {
+          if (data.error) { detail.textContent = '오류: '+data.error; return; }
+          if (!data.branches||data.branches.length===0) { detail.textContent = '지점 정보 없음'; return; }
+          data.branches.forEach(br => {
             const chip = document.createElement('span');
-            chip.className = 'branch-chip ' + (br.visited ? 'visited' : 'unvisited');
-            chip.textContent = stripSymbols(br.지점명);
+            chip.className = 'branch-chip '+(br.visited?'visited':'unvisited');
+            chip.textContent = br.지점명;
             detail.appendChild(chip);
           });
         });
       };
-
       return wrap;
+    }
+
+    function loadDashboard() {
+      const url = getUrl();
+      if (!url) { dashboardList.textContent = '연결 설정에서 URL을 먼저 입력하세요.'; return; }
+      dashboardSummary.innerHTML = '';
+      dashboardList.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'dashboard' }, data => {
+        if (data.error) { dashboardList.textContent = '오류: '+data.error; return; }
+        dashboardList.innerHTML = '';
+        if (!data.banks||data.banks.length===0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
+        renderDashboardSummary(data.banks);
+        data.banks.forEach(b => dashboardList.appendChild(buildDashboardBank(b)));
+      });
     }
 
     const toggleDashboardListBtn = document.getElementById('toggleDashboardListBtn');
     toggleDashboardListBtn.onclick = () => {
-      const isHidden = dashboardList.style.display === 'none';
-      dashboardList.style.display = isHidden ? 'block' : 'none';
-      toggleDashboardListBtn.textContent = isHidden ? '은행별 방문 현황 숨기기' : '은행별 방문 현황 보기';
+      const hidden = dashboardList.style.display === 'none';
+      dashboardList.style.display = hidden ? 'block' : 'none';
+      toggleDashboardListBtn.textContent = hidden ? '은행별 방문 현황 숨기기' : '은행별 방문 현황 보기';
     };
-
     document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
     loadDashboard();
   </script>
