@@ -5,6 +5,49 @@ var SHEET_PROPOSAL = '제안서요청';
 var SHEET_LOG = '방문로그';
 var SHEET_USERS = '사용자목록';
 var SHEET_DELETED = '삭제된 판매자';
+var DATA_SPREADSHEET_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4'; // 시스템 데이터 전용 스프레드시트("방카 활동의 기록 (시스템 데이터)")
+
+// 실제 데이터가 저장된 스프레드시트. 이 스크립트 파일 자체는 기존 "은행분석 및 방문정리" 파일에 묶여있지만,
+// 데이터는 별도 파일로 분리되어 있으므로 getActiveSpreadsheet() 대신 이 함수를 사용한다.
+function getSS() {
+  return SpreadsheetApp.openById(DATA_SPREADSHEET_ID);
+}
+
+// 일회성 마이그레이션: 시스템 시트만 새 스프레드시트로 복사 (기존 파일은 건드리지 않음).
+// Apps Script 편집기에서 이 함수만 선택해 "실행"으로 한 번 돌리면 됨. 실행 후 이 함수는 지워도 무방.
+function migrateSystemSheetsToNewSpreadsheet() {
+  var NEW_SS_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4';
+  var srcSs = SpreadsheetApp.getActiveSpreadsheet(); // 마이그레이션 원본(구 파일)은 의도적으로 컨테이너 자신을 참조
+  var destSs = SpreadsheetApp.openById(NEW_SS_ID);
+  var namesToMove = [SHEET_SELLER, SHEET_PROPOSAL, SHEET_LOG, SHEET_USERS, SHEET_DELETED];
+  var results = [];
+  namesToMove.forEach(function (name) {
+    var sheet = srcSs.getSheetByName(name);
+    if (!sheet) { results.push(name + ': 원본에 없음(건너뜀)'); return; }
+    var existing = destSs.getSheetByName(name);
+    if (existing) { destSs.deleteSheet(existing); } // 재실행 시 중복 방지
+    var copied = sheet.copyTo(destSs);
+    copied.setName(name);
+    results.push(name + ': 복사 완료 (' + copied.getLastRow() + '행)');
+  });
+  // 새 파일에 기본으로 생성된 빈 "시트1"이 있으면 정리
+  var defaultSheet = destSs.getSheetByName('시트1');
+  if (defaultSheet && destSs.getSheets().length > 1) destSs.deleteSheet(defaultSheet);
+  Logger.log(results.join('\n'));
+  return results;
+}
+
+// 일회성: 새 스프레드시트에 사용자목록 시트 생성 (헤더 + 소유자 본인 등록)
+function createUsersSheetInNewSpreadsheet() {
+  var NEW_SS_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4';
+  var destSs = SpreadsheetApp.openById(NEW_SS_ID);
+  if (destSs.getSheetByName(SHEET_USERS)) return '이미 존재함';
+  var sheet = destSs.insertSheet(SHEET_USERS);
+  sheet.appendRow(['이름', '이메일']);
+  sheet.appendRow(['김용국', 'sbanca.kim@gmail.com']);
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+  return '사용자목록 생성 완료';
+}
 
 function doGet(e) {
   var action = e.parameter.action;
@@ -309,9 +352,9 @@ function handleCommit(data) {
     return { ok: false, message: '저장할 내용이 없습니다.' };
   }
 
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
-  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
-  var pSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PROPOSAL);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
+  var pSheet = getSS().getSheetByName(SHEET_PROPOSAL);
   // 정보 기록 카드에서 날짜를 직접 선택했으면(지난 날짜 기록 등) 그 날짜를 쓰고, 없으면 오늘 날짜를 쓴다.
   var todayLabel = resolveDateLabel(data && data.date);
   var results = [];
@@ -440,7 +483,7 @@ function buildBranchSummary(qBank, qBranch, qSeller) {
     };
   }
 
-  var sellerSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sellerSheet = getSS().getSheetByName(SHEET_SELLER);
   var sellerRows = sellerSheet.getDataRange().getValues();
   var bankCol = fillMergedColumn(sellerRows, 1);
   var branchCol = fillMergedColumn(sellerRows, 2);
@@ -527,7 +570,7 @@ function buildSpokenSellerSummary(sellersStructured) {
 // 담당자 이메일이 설정된 행은 본인 것만, 미설정 행은 모두에게 표시(마이그레이션 호환)
 function handleListBranches() {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var bankCol = fillMergedColumn(rows, 1);
   var branchCol = fillMergedColumn(rows, 2);
@@ -557,7 +600,7 @@ function handleListBranches() {
 // 은행+지점을 선택했을 때, 그 지점에 등록된 판매자 목록(드롭다운용)
 function handleListSellers(bank, branch) {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var group = findMatchingGroup(rows, bank, branch);
   if (email) {
@@ -612,11 +655,11 @@ function handleLogVisit(bank, branch, date, visitType) {
     return { ok: false, message: '은행과 지점을 선택해주세요.' };
   }
   var email = getCurrentUserEmail();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var resolvedBranch = resolveBranchName(rows, bank, branch);
   var dateLabel = resolveDateLabel(date);
-  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
   logSheet.appendRow([dateLabel, bank, resolvedBranch, '', '', email, String(visitType || '지점방문').trim()]);
   return { ok: true, dateLabel: dateLabel, bank: bank, branch: resolvedBranch };
 }
@@ -625,7 +668,7 @@ function handleLogVisit(bank, branch, date, visitType) {
 function handleGetSellerInfo(bank, branch, seller) {
   if (!String(seller || '').trim()) return { ok: true, seller: null };
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
   if (rowIdx === -1) return { ok: true, seller: null };
@@ -650,7 +693,7 @@ function handleGetSellerInfo(bank, branch, seller) {
 function handleUpdateSellerTitle(bank, branch, seller, newTitle) {
   if (!bank || !branch || !seller) return { ok: false, message: '은행, 지점, 판매자를 모두 선택해주세요.' };
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
   if (rowIdx === -1) return { ok: false, message: '판매자를 찾을 수 없습니다.' };
@@ -667,7 +710,7 @@ function handleUpdateSellerName(bank, branch, seller, newName) {
   if (normalizeText(newNameTrimmed) === normalizeText(seller)) return { ok: false, message: '이름이 동일합니다.' };
 
   var email = getCurrentUserEmail().toLowerCase();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSS();
   var sheet = ss.getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
@@ -700,7 +743,7 @@ function handleFindArchivedSellers(bank, sellerName, title) {
   var normName = normalizeText(sellerName);
   var normTitle = normalizeText(title);
   var myEmail = getCurrentUserEmail().toLowerCase();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSS();
   var candidates = [];
 
   function rowToCandidate(r, source) {
@@ -757,8 +800,8 @@ function handleSaveSellerFields(data) {
     return { ok: false, message: '은행, 지점, 판매자를 모두 선택해주세요.' };
   }
 
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
-  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
   var rows = sheet.getDataRange().getValues();
   var todayLabel = resolveDateLabel(data.date);
   var resolvedBranch = resolveBranchName(rows, bank, branch);
@@ -800,7 +843,7 @@ function handleSaveSellerFields(data) {
 // 달력에서 특정 날짜(YYYY-MM-DD)를 누르면 그날 방문한 점포 목록을 보여줌
 function handleCalendarDay(dateStr) {
   var email = getCurrentUserEmail().toLowerCase();
-  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
   var logRows = logSheet.getDataRange().getValues();
   var matches = logRows.slice(1).filter(function (r) {
     if (String(r[0] || '').indexOf(dateStr) !== 0) return false;
@@ -842,7 +885,7 @@ function handleCalendarDay(dateStr) {
 // 판매자정보 시트 K열(영업대상, 체크박스)에 TRUE로 표시된 지점만 모수로 집계함
 function handleDashboard() {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var bankCol = fillMergedColumn(rows, 1);
   var branchCol = fillMergedColumn(rows, 2);
@@ -864,7 +907,7 @@ function handleDashboard() {
   }
 
   var thisMonth = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
-  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
   var logRows = logSheet.getDataRange().getValues();
   var visitedByBank = {}; // bank -> Set(branchKey) 이번달 방문
   for (var j = 1; j < logRows.length; j++) {
@@ -900,7 +943,7 @@ function handleDashboard() {
 function handleDashboardBank(bankName) {
   var email = getCurrentUserEmail().toLowerCase();
   var normBank = normalizeText(bankName);
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SELLER);
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
   var rows = sheet.getDataRange().getValues();
   var bankCol = fillMergedColumn(rows, 1);
   var branchCol = fillMergedColumn(rows, 2);
@@ -918,7 +961,7 @@ function handleDashboardBank(bankName) {
   }
 
   var thisMonth = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
-  var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
   var logRows = logSheet.getDataRange().getValues();
   var visited = {}; // normBranch -> true (이번 달 방문)
   for (var j = 1; j < logRows.length; j++) {
@@ -941,7 +984,7 @@ function handleDashboardBank(bankName) {
 
 // 제안서 요청 시트 전체를 화면에서 실시간으로 보기 위한 목록
 function handleListProposals() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PROPOSAL);
+  var sheet = getSS().getSheetByName(SHEET_PROPOSAL);
   var rows = sheet.getDataRange().getValues();
   var header = rows[0];
   var items = [];
@@ -955,7 +998,7 @@ function handleListProposals() {
 
 // 제안서 요청 한 행을 화면에서 수정(처리상태 토글 포함)한 내용을 저장
 function handleUpdateProposal(rowIndex, data) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PROPOSAL);
+  var sheet = getSS().getSheetByName(SHEET_PROPOSAL);
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var values = header.map(function (h) { return data[h] !== undefined ? data[h] : ''; });
   sheet.getRange(rowIndex, 1, 1, header.length).setValues([values]);
@@ -994,7 +1037,7 @@ function getCurrentUserEmail() {
 function handleGetMe() {
   var email = getCurrentUserEmail();
   if (!email) return { ok: false, error: 'login_required' };
-  var usersSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_USERS);
+  var usersSheet = getSS().getSheetByName(SHEET_USERS);
   if (!usersSheet) return { ok: false, error: 'no_users_sheet' };
   var rows = usersSheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
