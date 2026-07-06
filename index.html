@@ -403,7 +403,9 @@
           bankSel.innerHTML = '<option value="">은행 선택</option>' +
             banks.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
           updateBranches();
-        }
+        },
+        setBank(val) { bankSel.value = val; updateBranches(); },
+        setBranch(val) { branchSel.value = val; updateSellers(); }
       };
     }
 
@@ -643,25 +645,22 @@
 
     vBank.addEventListener('change', () => {
       if (_syncing) return; _syncing = true;
-      sBank.value = vBank.value;
-      sBank.dispatchEvent(new Event('change'));
+      sellerPicker.setBank(vBank.value);
       setTimeout(() => { _syncing = false; }, 50);
     });
     vBranch.addEventListener('change', () => {
       if (_syncing) return; _syncing = true;
-      sBranch.value = vBranch.value;
-      sBranch.dispatchEvent(new Event('change'));
+      sellerPicker.setBranch(vBranch.value);
       setTimeout(() => { _syncing = false; }, 50);
     });
     sBank.addEventListener('change', () => {
       if (_syncing) return; _syncing = true;
-      vBank.value = sBank.value;
-      vBank.dispatchEvent(new Event('change'));
+      visitPicker.setBank(sBank.value);
       setTimeout(() => { _syncing = false; }, 50);
     });
     sBranch.addEventListener('change', () => {
       if (_syncing) return; _syncing = true;
-      vBranch.value = sBranch.value;
+      visitPicker.setBranch(sBranch.value);
       setTimeout(() => { _syncing = false; }, 50);
     });
 
