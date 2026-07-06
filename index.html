@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>방카 활동의 기록</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#1d4ed8" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --danger: #dc2626;
+    --neutral: #64748b;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    background: linear-gradient(180deg, var(--bg) 0%, #1e293b 160px, #f1f5f9 160px, #f1f5f9 100%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header { padding: 28px 20px 16px; text-align: center; color: #fff; }
+  header .logo { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+  .container { max-width: 420px; margin: 0 auto; padding: 0 16px 32px; }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 18px;
+    margin-top: 16px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+    border: 1px solid var(--border);
+  }
+  .card h3 {
+    margin: 0 0 14px;
+    font-size: 18px;
+    color: var(--text);
+    font-weight: 700;
+    text-align: center;
+  }
+  .date-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .date-row label { font-size: 12px; color: var(--muted); font-weight: 600; flex: 0 0 auto; white-space: nowrap; }
+  .date-row input[type="date"] {
+    flex: 1;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13.5px;
+    background: #fff;
+    color: var(--text);
+  }
+  button {
+    font-size: 15px;
+    font-weight: 600;
+    padding: 13px 18px;
+    border-radius: 12px;
+    border: none;
+    color: #fff;
+    width: 100%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: transform 0.05s ease, opacity 0.15s ease;
+  }
+  button:active { transform: scale(0.98); opacity: 0.9; }
+  .btn-primary { background: var(--primary); }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-neutral { background: var(--neutral); }
+  .status-box {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: none;
+  }
+  .status-box.visible { display: block; }
+  .select-row { display: flex; gap: 8px; }
+  .select-row select {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13.5px;
+    background: #fff;
+    color: var(--text);
+    min-width: 0;
+  }
+  .sel-full { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border); font-size: 13.5px; background: #fff; color: var(--text); margin-top: 8px; }
+  .field-group { margin-bottom: 12px; }
+  .field-group:last-of-type { margin-bottom: 0; }
+  .field-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 700;
+    margin-bottom: 5px;
+    border-left: 3px solid var(--primary);
+    padding-left: 7px;
+  }
+  .field-group textarea {
+    width: 100%;
+    font-size: 14px;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+    color: var(--text);
+    resize: vertical;
+    min-height: 38px;
+    font-family: inherit;
+    line-height: 1.5;
+  }
+  .field-group textarea:focus { outline: 2px solid var(--primary); border-color: transparent; background: #fff; }
+  .field-group textarea.has-data { background: #fff; border-color: #bfdbfe; }
+  .seller-meta { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; padding: 8px 12px; background: #eff6ff; border-radius: 8px; }
+
+  /* 달력 */
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cal-nav button { width: auto; padding: 8px 14px; font-size: 14px; }
+  .cal-title { font-size: 15px; font-weight: 700; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-cell {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #f8fafc;
+    color: var(--text);
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .cal-cell.empty { background: transparent; cursor: default; }
+  .cal-cell.selected { background: var(--primary); color: #fff; }
+  .cal-cell.has-visit { border-color: var(--primary); }
+  .cal-day-label { font-size: 11px; color: var(--muted); text-align: center; }
+  #calendarResult { margin-top: 14px; }
+  .visit-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13.5px; line-height: 1.5;
+  }
+  .visit-item:last-child { border-bottom: none; }
+  .visit-num { font-size: 12px; font-weight: 700; color: var(--primary); min-width: 18px; padding-top: 1px; }
+  .visit-text { flex: 1; }
+  .visit-seller { font-size: 12px; color: var(--muted); }
+
+  /* 대시보드 */
+  .dash-bank { margin-bottom: 16px; }
+  .dash-bank:last-child { margin-bottom: 0; }
+  .dash-bank-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; cursor: pointer; }
+  .dash-bar-track { position: relative; height: 22px; border-radius: 8px; background: #fee2e2; overflow: hidden; }
+  .dash-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #16a34a; border-radius: 8px 0 0 8px; }
+  .dash-bar-label { position: relative; z-index: 1; font-size: 11px; line-height: 22px; padding: 0 8px; color: #fff; font-weight: 700; text-shadow: 0 1px 1px rgba(0,0,0,0.25); }
+  .dash-stats { display: flex; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--muted); }
+  .dash-summary { margin-bottom: 16px; }
+  .dash-summary-numbers { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .dash-summary-item { text-align: center; flex: 1; }
+  .dash-summary-item .num { font-size: 22px; font-weight: 800; line-height: 1.1; }
+  .dash-summary-item .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .dash-summary-item.total .num { color: #1e293b; }
+  .dash-summary-item.visited .num { color: #16a34a; }
+  .dash-summary-item.unvisited .num { color: #dc2626; }
+  .dash-summary-track { position: relative; height: 10px; border-radius: 6px; background: #fee2e2; overflow: hidden; }
+  .dash-summary-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #16a34a; border-radius: 6px 0 0 6px; }
+  .dash-summary-pct { text-align: right; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .branch-detail { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .branch-chip { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
+  .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
+  .branch-chip.unvisited { background: #fee2e2; color: #b91c1c; }
+
+  details.settings { margin-top: 24px; }
+  details.settings summary { text-align: center; font-size: 11px; color: #94a3b8; cursor: pointer; padding: 8px; }
+  details.settings input { width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; background: #f8fafc; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">방카 활동의 기록</div>
+    <div id="userBadge" style="font-size:13px;opacity:0.8;margin-top:4px;"></div>
+  </header>
+
+  <!-- 로그인 오류 배너 -->
+  <div id="loginError" style="display:none;background:#dc2626;color:#fff;text-align:center;padding:12px 16px;font-size:14px;"></div>
+
+  <div class="container">
+
+    <!-- ① 방문 지점 입력 -->
+    <div class="card">
+      <h3>방문 지점 입력</h3>
+      <div class="date-row">
+        <label for="visitDateInput">방문일</label>
+        <input type="date" id="visitDateInput" />
+      </div>
+      <div class="select-row">
+        <select id="visitBankSelect"><option value="">은행 선택</option></select>
+        <select id="visitBranchSelect"><option value="">지점 선택</option></select>
+      </div>
+      <button id="logVisitBtn" class="btn-primary" style="margin-top:10px;">방문 입력</button>
+      <div id="visitStatus" class="status-box"></div>
+    </div>
+
+    <!-- ② 판매자 정보 -->
+    <div class="card">
+      <h3>판매자 정보</h3>
+      <div class="select-row">
+        <select id="sellerBankSelect"><option value="">은행 선택</option></select>
+        <select id="sellerBranchSelect"><option value="">지점 선택</option></select>
+      </div>
+      <select class="sel-full" id="sellerSelect"><option value="">판매자 선택</option></select>
+
+      <div id="sellerFields" style="display:none; margin-top:14px;">
+        <div id="sellerMeta" class="seller-meta"></div>
+
+        <!-- 이름/직책 수정 패널 -->
+        <details id="sellerEditDetails" style="margin-bottom:12px;">
+          <summary style="font-size:13px;color:var(--muted);cursor:pointer;user-select:none;">✏️ 이름 · 직책 수정</summary>
+          <div style="margin-top:10px;padding:12px;background:#f8fafc;border-radius:10px;border:1px solid var(--border);">
+            <div style="margin-bottom:10px;">
+              <label style="font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">직책 수정</label>
+              <div style="display:flex;gap:8px;">
+                <input id="editTitleInput" type="text" placeholder="새 직책 입력" style="flex:1;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+                <button id="saveTitleBtn" class="btn-primary" style="width:auto;padding:9px 16px;font-size:13px;">저장</button>
+              </div>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+            <div>
+              <label style="font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">판매자 교체 <span style="color:var(--danger);font-weight:400;">(기존 담당자 정보 보관 후 초기화)</span></label>
+              <div style="display:flex;gap:8px;">
+                <input id="editNameInput" type="text" placeholder="새 판매자 이름 입력" style="flex:1;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+                <button id="saveNameBtn" style="width:auto;padding:9px 16px;font-size:13px;background:var(--danger);">교체</button>
+              </div>
+            </div>
+            <div id="editStatus" class="status-box" style="margin-top:8px;"></div>
+          </div>
+        </details>
+
+        <!-- 이전 담당자 정보 복원 배너 -->
+        <div id="archiveRestoreBox" style="display:none;margin-bottom:12px;padding:12px;background:#eff6ff;border-radius:10px;border:1px solid #bfdbfe;">
+          <div id="archiveRestoreMsg" style="font-size:13px;color:#1e40af;margin-bottom:8px;"></div>
+          <div id="archiveCandidateList"></div>
+        </div>
+
+        <div class="field-group">
+          <label>가족관계</label>
+          <textarea id="field_가족관계" rows="2" placeholder="예: 기혼, 자녀 2명"></textarea>
+        </div>
+        <div class="field-group">
+          <label>자택</label>
+          <textarea id="field_자택" rows="2" placeholder="예: 인천 연수구"></textarea>
+        </div>
+        <div class="field-group">
+          <label>판매성향</label>
+          <textarea id="field_판매성향" rows="2" placeholder="예: 환급률 중시, 단기 납입 선호"></textarea>
+        </div>
+        <div class="field-group">
+          <label>방문이력 및 대화내용</label>
+          <textarea id="field_방문이력" rows="3" placeholder="예: 2025-06 신상품 소개, 고객 3명 DB 요청"></textarea>
+        </div>
+        <div class="field-group">
+          <label>기타정보</label>
+          <textarea id="field_기타대화내용" rows="2" placeholder="예: 이번달 승진 예정, 점심 같이함"></textarea>
+        </div>
+        <button id="saveSellerBtn" class="btn-primary" style="margin-top:14px;">기록하기</button>
+        <div id="sellerSaveStatus" class="status-box"></div>
+      </div>
+      <div id="sellerLoadStatus" class="status-box"></div>
+    </div>
+
+    <!-- ③ 방문 달력 -->
+    <div class="card">
+      <h3>방문 달력</h3>
+      <div class="cal-nav">
+        <button id="calPrev" class="btn-neutral">‹ 이전</button>
+        <div class="cal-title" id="calTitle"></div>
+        <button id="calNext" class="btn-neutral">다음 ›</button>
+      </div>
+      <div class="cal-grid" id="calDayLabels"></div>
+      <div class="cal-grid" id="calGrid" style="margin-top:4px;"></div>
+      <div id="calendarResult"></div>
+    </div>
+
+    <!-- ④ 이번 달 방문 현황 -->
+    <div class="card">
+      <h3>이번 달 방문 현황</h3>
+      <div id="dashboardSummary" class="dash-summary"></div>
+      <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:10px;">↻ 새로고침</button>
+      <button id="toggleDashboardListBtn" class="btn-neutral" style="margin-bottom:10px;">은행별 방문 현황 보기</button>
+      <div id="dashboardList" style="display:none;"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">모수: 판매자정보 시트 K열(영업대상) 체크 기준</div>
+    </div>
+
+    <details class="settings">
+      <summary>연결 설정</summary>
+      <input id="webAppUrl" type="text" placeholder="Apps Script 웹앱 URL (선택)" />
+    </details>
+  </div>
+
+  <script>
+    // ─── 공통 유틸 ───────────────────────────────────────────────────────────
+    const HARDCODED_URL = 'https://script.google.com/macros/s/AKfycbyo3aaLvJjbYE2_XmabUyybIDj4ZVST0EJoIJzPPj8gyBb4D2sm2yigCtHZ7T9EbalE/exec';
+    const urlInput = document.getElementById('webAppUrl');
+    urlInput.value = localStorage.getItem('webAppUrl') || '';
+    urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
+    function getUrl() { return urlInput.value.trim() || HARDCODED_URL; }
+
+    // ─── Google 계정 인증 ─────────────────────────────────────────────────────
+    function initUser() {
+      jsonpRequest(getUrl(), { action: 'getMe' }, data => {
+        if (data.ok) {
+          document.getElementById('userBadge').textContent = data.name + ' 님';
+        } else if (data.error === 'login_required') {
+          showLoginError('Google 계정으로 로그인이 필요합니다.');
+        } else if (data.error === 'not_registered') {
+          showLoginError('등록되지 않은 계정입니다 (' + (data.email || '') + '). 관리자에게 문의하세요.');
+        } else if (data.error === 'no_users_sheet') {
+          // 사용자목록 시트 없음 = 아직 다중사용자 설정 전. 오류 없이 진행.
+        }
+      });
+    }
+    function showLoginError(msg) {
+      const el = document.getElementById('loginError');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function todayLocalISO() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+
+    function showStatus(el, text, isError) {
+      el.textContent = text;
+      el.style.color = isError ? 'var(--danger)' : 'var(--text)';
+      el.classList.add('visible');
+    }
+    function hideStatus(el) { el.classList.remove('visible'); el.textContent = ''; }
+
+    function escapeHtml(s) {
+      return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    let jsonpCounter = 0;
+    function jsonpRequest(baseUrl, params, onData) {
+      const cbName = 'jsonpCb' + (jsonpCounter++);
+      const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과' }); }, 20000);
+      function cleanup() { clearTimeout(timeout); delete window[cbName]; if (script.parentNode) script.remove(); }
+      window[cbName] = data => { cleanup(); onData(data); };
+      const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
+      const script = document.createElement('script');
+      script.src = baseUrl + (baseUrl.includes('?') ? '&' : '?') + qs;
+      script.onerror = () => { cleanup(); onData({ error: '요청 실패 (URL을 확인하세요)' }); };
+      document.body.appendChild(script);
+    }
+
+    // ─── 날짜 입력 초기화 ────────────────────────────────────────────────────
+    const visitDateInput = document.getElementById('visitDateInput');
+    visitDateInput.value = todayLocalISO();
+
+    // ─── 은행/지점/판매자 드롭다운 ───────────────────────────────────────────
+    let branchListData = [];
+
+    function makePicker(bankSel, branchSel, sellerSel, sellerPlaceholder, onSellerChange) {
+      function updateSellers() {
+        if (!sellerSel) return;
+        const bank = bankSel.value, branch = branchSel.value;
+        sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>`;
+        const url = getUrl();
+        if (!bank || !branch || !url) return;
+        jsonpRequest(url, { action: 'listSellers', bank, branch }, data => {
+          if (data.error || !data.sellers) return;
+          sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>` +
+            data.sellers.map(s => `<option value="${escapeHtml(s.판매자명)}">${escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))}</option>`).join('');
+        });
+      }
+      function updateBranches() {
+        const bank = bankSel.value;
+        const branches = branchListData.filter(b => !bank || b.은행명 === bank);
+        branchSel.innerHTML = '<option value="">지점 선택</option>' +
+          branches.map(b => `<option value="${escapeHtml(b.지점명)}">${escapeHtml(b.지점명)}</option>`).join('');
+        updateSellers();
+      }
+      bankSel.addEventListener('change', updateBranches);
+      branchSel.addEventListener('change', updateSellers);
+      if (sellerSel && onSellerChange) sellerSel.addEventListener('change', onSellerChange);
+      return {
+        populate() {
+          const banks = [...new Set(branchListData.map(b => b.은행명))];
+          bankSel.innerHTML = '<option value="">은행 선택</option>' +
+            banks.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
+          updateBranches();
+        }
+      };
+    }
+
+    const visitPicker = makePicker(
+      document.getElementById('visitBankSelect'),
+      document.getElementById('visitBranchSelect'),
+      null, '', null
+    );
+
+    // 판매자 드롭다운 변경 시 기존 정보 로드
+    function onSellerSelected() {
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const fieldsDiv  = document.getElementById('sellerFields');
+      const loadStatus = document.getElementById('sellerLoadStatus');
+
+      hideStatus(loadStatus);
+      if (!seller) { fieldsDiv.style.display = 'none'; return; }
+
+      // 필드 초기화 후 표시
+      FIELD_KEYS.forEach(k => {
+        const ta = document.getElementById('field_' + k);
+        ta.value = '';
+        ta.classList.remove('has-data');
+      });
+      document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller;
+      fieldsDiv.style.display = 'block';
+      hideStatus(document.getElementById('sellerSaveStatus'));
+
+      const url = getUrl();
+      if (!url || !bank || !branch) return;
+
+      showStatus(loadStatus, '기존 정보 불러오는 중...');
+      jsonpRequest(url, { action: 'getSellerInfo', bank, branch, seller }, data => {
+        hideStatus(loadStatus);
+        document.getElementById('archiveRestoreBox').style.display = 'none';
+        if (data.error) { showStatus(loadStatus, '오류: ' + data.error, true); return; }
+        if (data.ok && data.seller) {
+          const s = data.seller;
+          FIELD_KEYS.forEach(k => {
+            const ta = document.getElementById('field_' + k);
+            const v = s[k] || '';
+            ta.value = v;
+            if (v) ta.classList.add('has-data');
+          });
+          const title = s.직책 || '';
+          if (title) {
+            document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller + ' ' + title;
+            document.getElementById('editTitleInput').value = title;
+          }
+        } else {
+          // 데이터 없는 신규 판매자 → 이전 담당자 정보 탐색
+          const selectedOpt = document.getElementById('sellerSelect').selectedOptions[0];
+          const titleFromDropdown = selectedOpt ? (selectedOpt.textContent.replace(seller, '').trim()) : '';
+          if (titleFromDropdown) document.getElementById('editTitleInput').value = titleFromDropdown;
+          checkArchive(bank, seller, titleFromDropdown);
+        }
+      });
+    }
+
+    const sellerPicker = makePicker(
+      document.getElementById('sellerBankSelect'),
+      document.getElementById('sellerBranchSelect'),
+      document.getElementById('sellerSelect'),
+      '판매자 선택',
+      onSellerSelected
+    );
+
+    // 은행/지점 바뀌면 판매자 필드 숨김
+    ['sellerBankSelect','sellerBranchSelect'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        document.getElementById('sellerFields').style.display = 'none';
+        hideStatus(document.getElementById('sellerLoadStatus'));
+      });
+    });
+
+    const FIELD_KEYS = ['가족관계','자택','판매성향','방문이력','기타대화내용'];
+
+    function loadBranchList() {
+      const url = getUrl();
+      if (!url) return;
+      jsonpRequest(url, { action: 'listBranches' }, data => {
+        if (data.error || !data.branches) return;
+        branchListData = data.branches;
+        visitPicker.populate();
+        sellerPicker.populate();
+      });
+    }
+
+    // ─── ① 방문 입력 ─────────────────────────────────────────────────────────
+    document.getElementById('logVisitBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('visitBankSelect').value;
+      const branch = document.getElementById('visitBranchSelect').value;
+      const date   = visitDateInput.value || todayLocalISO();
+      const statusEl = document.getElementById('visitStatus');
+      if (!url)            { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
+      if (!bank || !branch){ showStatus(statusEl, '은행과 지점을 모두 선택해주세요.', true); return; }
+      showStatus(statusEl, '입력 중...');
+      jsonpRequest(url, { action: 'logVisit', bank, branch, date }, data => {
+        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
+        showStatus(statusEl, `✓ ${data.dateLabel}  ${bank} ${branch}  방문 입력 완료`);
+      });
+    };
+
+    // ─── ② 이름/직책 수정 ────────────────────────────────────────────────────
+    function applyArchivedData(candidate) {
+      const fields = ['가족관계','자택','판매성향','방문이력','기타대화내용'];
+      fields.forEach(k => {
+        const ta = document.getElementById('field_' + k);
+        const v = candidate[k] || '';
+        ta.value = v;
+        if (v) ta.classList.add('has-data'); else ta.classList.remove('has-data');
+      });
+      document.getElementById('archiveRestoreBox').style.display = 'none';
+    }
+
+    function checkArchive(bank, seller, title) {
+      const url = getUrl();
+      if (!url || !bank || !seller || !title) return;
+      jsonpRequest(url, { action: 'findArchivedSellers', bank, seller, title }, data => {
+        if (!data.ok || !data.candidates || data.candidates.length === 0) return;
+        const box = document.getElementById('archiveRestoreBox');
+        const msg = document.getElementById('archiveRestoreMsg');
+        const list = document.getElementById('archiveCandidateList');
+        list.innerHTML = '';
+        if (data.candidates.length === 1) {
+          const c = data.candidates[0];
+          msg.textContent = `이전 담당자(${c.지점명 || '구 지점'} 근무) 정보가 있습니다. 가져올까요?`;
+          const btn = document.createElement('button');
+          btn.className = 'btn-primary';
+          btn.style.cssText = 'width:auto;padding:8px 16px;font-size:13px;';
+          btn.textContent = '정보 가져오기';
+          btn.onclick = () => applyArchivedData(c);
+          list.appendChild(btn);
+        } else {
+          msg.textContent = `이름·직책이 같은 이전 담당자 정보가 ${data.candidates.length}건 있습니다. 가져올 정보를 선택하세요:`;
+          data.candidates.forEach((c, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;';
+            const info = document.createElement('span');
+            info.style.cssText = 'flex:1;font-size:12px;color:var(--text);';
+            info.textContent = `${i+1}. ${c.지점명 || '지점 미상'} · ${c.날짜 || '날짜 미상'}`;
+            const btn = document.createElement('button');
+            btn.className = 'btn-primary';
+            btn.style.cssText = 'width:auto;padding:6px 12px;font-size:12px;';
+            btn.textContent = '가져오기';
+            btn.onclick = () => applyArchivedData(c);
+            row.appendChild(info);
+            row.appendChild(btn);
+            list.appendChild(row);
+          });
+        }
+        box.style.display = 'block';
+      });
+    }
+
+    document.getElementById('saveTitleBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const newTitle = document.getElementById('editTitleInput').value.trim();
+      const statusEl = document.getElementById('editStatus');
+      if (!newTitle) { showStatus(statusEl, '새 직책을 입력해주세요.', true); return; }
+      showStatus(statusEl, '저장 중...');
+      jsonpRequest(url, { action: 'updateSellerTitle', bank, branch, seller, newTitle }, data => {
+        if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        showStatus(statusEl, '✓ 직책이 ' + data.newTitle + ' 으로 수정되었습니다.');
+        document.getElementById('sellerMeta').textContent =
+          bank + ' ' + branch + ' · ' + seller + ' ' + data.newTitle;
+        // 드롭다운 옵션 텍스트도 업데이트
+        const opt = document.getElementById('sellerSelect').selectedOptions[0];
+        if (opt) opt.textContent = seller + (data.newTitle ? ' ' + data.newTitle : '');
+      });
+    };
+
+    document.getElementById('saveNameBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const newName = document.getElementById('editNameInput').value.trim();
+      const statusEl = document.getElementById('editStatus');
+      if (!newName) { showStatus(statusEl, '새 판매자 이름을 입력해주세요.', true); return; }
+      if (!confirm(`"${seller}"의 모든 정보를 보관 처리하고 "${newName}"으로 교체합니다. 계속할까요?`)) return;
+      showStatus(statusEl, '처리 중...');
+      jsonpRequest(url, { action: 'updateSellerName', bank, branch, seller, newName }, data => {
+        if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        showStatus(statusEl, `✓ "${data.oldName}" → "${data.newName}" 교체 완료. 필드가 초기화되었습니다.`);
+        // 필드 초기화
+        FIELD_KEYS.forEach(k => {
+          const ta = document.getElementById('field_' + k);
+          ta.value = '';
+          ta.classList.remove('has-data');
+        });
+        document.getElementById('archiveRestoreBox').style.display = 'none';
+        // 드롭다운 옵션 업데이트
+        const opt = document.getElementById('sellerSelect').selectedOptions[0];
+        if (opt) { opt.value = data.newName; opt.textContent = data.newName; }
+        document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + data.newName;
+        document.getElementById('editNameInput').value = '';
+      });
+    };
+
+    // ─── ② 판매자 정보 저장 ──────────────────────────────────────────────────
+    document.getElementById('saveSellerBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const statusEl = document.getElementById('sellerSaveStatus');
+      if (!url)                  { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
+      if (!bank || !branch || !seller) { showStatus(statusEl, '은행, 지점, 판매자를 모두 선택해주세요.', true); return; }
+      showStatus(statusEl, '저장 중...');
+      const payload = { bank, branch, seller, date: todayLocalISO() };
+      FIELD_KEYS.forEach(k => { payload[k] = document.getElementById('field_' + k).value.trim(); });
+      jsonpRequest(url, { action: 'saveSellerFields', data: JSON.stringify(payload) }, data => {
+        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
+        showStatus(statusEl, '✓ 저장 완료');
+        FIELD_KEYS.forEach(k => {
+          const ta = document.getElementById('field_' + k);
+          if (ta.value) ta.classList.add('has-data');
+        });
+      });
+    };
+
+    loadBranchList();
+
+    // ─── ③ 방문 달력 ─────────────────────────────────────────────────────────
+    let calMonthOffset = 0;
+    const calGrid      = document.getElementById('calGrid');
+    const calDayLabels = document.getElementById('calDayLabels');
+    const calTitle     = document.getElementById('calTitle');
+    const calendarResult = document.getElementById('calendarResult');
+
+    ['일','월','화','수','목','금','토'].forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'cal-day-label';
+      el.textContent = d;
+      calDayLabels.appendChild(el);
+    });
+
+    function renderCalendar() {
+      const base = new Date();
+      base.setDate(1);
+      base.setMonth(base.getMonth() + calMonthOffset);
+      const year = base.getFullYear(), month = base.getMonth();
+      calTitle.textContent = year + '년 ' + (month+1) + '월';
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month+1, 0).getDate();
+      calGrid.innerHTML = '';
+      for (let i = 0; i < firstDay; i++) {
+        const e = document.createElement('div'); e.className = 'cal-cell empty'; calGrid.appendChild(e);
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell';
+        cell.textContent = d;
+        const dateStr = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        cell.onclick = () => selectCalendarDate(dateStr, cell);
+        calGrid.appendChild(cell);
+      }
+    }
+
+    function selectCalendarDate(dateStr, cell) {
+      document.querySelectorAll('.cal-cell.selected').forEach(c => c.classList.remove('selected'));
+      cell.classList.add('selected');
+      const url = getUrl();
+      if (!url) { calendarResult.textContent = '연결 설정에서 URL을 먼저 입력하세요.'; return; }
+      calendarResult.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'calendarDay', date: dateStr }, data => {
+        if (data.error) { calendarResult.textContent = '오류: ' + data.error; return; }
+        if (!data.visits || data.visits.length === 0) {
+          calendarResult.textContent = dateStr + ' 방문 기록이 없습니다.'; return;
+        }
+        calendarResult.innerHTML = '';
+        const header = document.createElement('div');
+        header.style.cssText = 'font-weight:700;margin-bottom:10px;font-size:13.5px;';
+        header.textContent = '방문 ' + data.branchCount + '개 지점 (판매자 ' + data.sellerCount + '명)';
+        calendarResult.appendChild(header);
+
+        // 지점별로 묶어서 번호 매기기 (지점 기준으로 넘버링, 판매자는 들여쓰기)
+        const branchMap = new Map();
+        data.visits.forEach(v => {
+          const key = v.은행명 + '|' + v.지점명;
+          if (!branchMap.has(key)) branchMap.set(key, { 은행명: v.은행명, 지점명: v.지점명, sellers: [] });
+          if (v.판매자명) branchMap.get(key).sellers.push(v);
+        });
+
+        let num = 1;
+        branchMap.forEach(g => {
+          const div = document.createElement('div');
+          div.className = 'visit-item';
+          const numEl = document.createElement('div');
+          numEl.className = 'visit-num';
+          numEl.textContent = num++ + '.';
+          const textEl = document.createElement('div');
+          textEl.className = 'visit-text';
+          textEl.innerHTML = '<strong>' + escapeHtml(g.은행명 + ' ' + g.지점명) + '</strong>';
+          if (g.sellers.length > 0) {
+            textEl.innerHTML += '<div class="visit-seller">' +
+              g.sellers.map(s => escapeHtml(s.판매자명)).join(', ') + '</div>';
+          }
+          div.appendChild(numEl);
+          div.appendChild(textEl);
+          calendarResult.appendChild(div);
+        });
+      });
+    }
+
+    document.getElementById('calPrev').onclick = () => { calMonthOffset--; renderCalendar(); };
+    document.getElementById('calNext').onclick = () => { calMonthOffset++; renderCalendar(); };
+    renderCalendar();
+
+    // ─── ④ 대시보드 ───────────────────────────────────────────────────────────
+    const dashboardList    = document.getElementById('dashboardList');
+    const dashboardSummary = document.getElementById('dashboardSummary');
+
+    function renderDashboardSummary(banks) {
+      const totals = banks.reduce((a,b) => { a.모수+=b.모수; a.당월방문+=b.당월방문; a.미방문+=b.미방문; return a; }, {모수:0,당월방문:0,미방문:0});
+      const pct = totals.모수>0 ? Math.round((totals.당월방문/totals.모수)*100) : 0;
+      dashboardSummary.innerHTML =
+        '<div class="dash-summary-numbers">' +
+          '<div class="dash-summary-item total"><div class="num">'+totals.모수+'</div><div class="lbl">총 모수</div></div>' +
+          '<div class="dash-summary-item visited"><div class="num">'+totals.당월방문+'</div><div class="lbl">방문</div></div>' +
+          '<div class="dash-summary-item unvisited"><div class="num">'+totals.미방문+'</div><div class="lbl">미방문</div></div>' +
+        '</div>' +
+        '<div class="dash-summary-track"><div class="dash-summary-fill" style="width:'+pct+'%"></div></div>' +
+        '<div class="dash-summary-pct">'+pct+'% 진행</div>';
+    }
+
+    function buildDashboardBank(b) {
+      const wrap = document.createElement('div'); wrap.className = 'dash-bank';
+      const name = document.createElement('div'); name.className = 'dash-bank-name'; name.textContent = b.은행명;
+      wrap.appendChild(name);
+      const track = document.createElement('div'); track.className = 'dash-bar-track';
+      const pct = b.모수>0 ? Math.round((b.당월방문/b.모수)*100) : 0;
+      const fill = document.createElement('div'); fill.className = 'dash-bar-fill'; fill.style.width = pct+'%';
+      const lbl = document.createElement('div'); lbl.className = 'dash-bar-label'; lbl.textContent = b.당월방문+' / '+b.모수+' ('+pct+'%)';
+      track.appendChild(fill); track.appendChild(lbl); wrap.appendChild(track);
+      const stats = document.createElement('div'); stats.className = 'dash-stats';
+      stats.innerHTML = '<span>모수 '+b.모수+'</span><span>당월방문 '+b.당월방문+'</span><span>미방문 '+b.미방문+'</span>';
+      wrap.appendChild(stats);
+      const detail = document.createElement('div'); detail.className = 'branch-detail'; detail.style.display = 'none';
+      wrap.appendChild(detail);
+      let loaded = false;
+      name.onclick = () => {
+        if (detail.style.display !== 'none') { detail.style.display = 'none'; return; }
+        detail.style.display = 'flex';
+        if (loaded) return;
+        loaded = true;
+        detail.textContent = '불러오는 중...';
+        const url = getUrl();
+        if (!url) { detail.textContent = 'URL을 먼저 입력하세요.'; return; }
+        jsonpRequest(url, { action: 'dashboardBank', bank: b.은행명 }, data => {
+          detail.innerHTML = '';
+          if (data.error) { detail.textContent = '오류: '+data.error; return; }
+          if (!data.branches||data.branches.length===0) { detail.textContent = '지점 정보 없음'; return; }
+          data.branches.forEach(br => {
+            const chip = document.createElement('span');
+            chip.className = 'branch-chip '+(br.visited?'visited':'unvisited');
+            chip.textContent = br.지점명;
+            detail.appendChild(chip);
+          });
+        });
+      };
+      return wrap;
+    }
+
+    function loadDashboard() {
+      const url = getUrl();
+      if (!url) { dashboardList.textContent = '연결 설정에서 URL을 먼저 입력하세요.'; return; }
+      dashboardSummary.innerHTML = '';
+      dashboardList.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'dashboard' }, data => {
+        if (data.error) { dashboardList.textContent = '오류: '+data.error; return; }
+        dashboardList.innerHTML = '';
+        if (!data.banks||data.banks.length===0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
+        renderDashboardSummary(data.banks);
+        data.banks.forEach(b => dashboardList.appendChild(buildDashboardBank(b)));
+      });
+    }
+
+    const toggleDashboardListBtn = document.getElementById('toggleDashboardListBtn');
+    toggleDashboardListBtn.onclick = () => {
+      const hidden = dashboardList.style.display === 'none';
+      dashboardList.style.display = hidden ? 'block' : 'none';
+      toggleDashboardListBtn.textContent = hidden ? '은행별 방문 현황 숨기기' : '은행별 방문 현황 보기';
+    };
+    document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
+    loadDashboard();
+    initUser();
+  </script>
+</body>
+</html>
