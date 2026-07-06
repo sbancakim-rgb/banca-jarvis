@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:sbancakim-rgb.github.io)",
+      "Bash(curl -s https://sbancakim-rgb.github.io/banca-jarvis/)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sbancakim-rgb/banca-jarvis/main/index.html\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sbancakim-rgb/banca-jarvis/main/index.html?nocache=$\\(date +%s\\)\")",
+      "Bash(curl -s \"https://api.github.com/repos/sbancakim-rgb/banca-jarvis/commits?per_page=3\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sbancakim-rgb/banca-jarvis/de816f5c80bba7fba7becb6e7a5fba423531f6e9/index.html\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sbancakim-rgb/banca-jarvis/3560b309c87217db727041c97e09ff14c4bdbe33/index.html\")",
+      "Bash(python3 -c ' *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\PC\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-PC-OneDrive-Desktop-------\\\\c939f320-9baa-4de5-b297-facedcce0f48\\\\scratchpad\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\PC\\\\OneDrive\\\\Desktop\\\\아파트 매물 정리 시스템\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "PowerShell($path = \"C:\\\\Users\\\\PC\\\\OneDrive\\\\Desktop\\\\아파트 매물 정리 시스템\"; Get-Item $path | Get-ChildItem -Hidden -Force; @\\(Get-ChildItem $path -Hidden -Force -Recurse\\).Count)"
+    ]
+  }
+}
