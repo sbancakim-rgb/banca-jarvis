@@ -794,7 +794,6 @@ function handleSaveSellerFields(data) {
     sheet.getRange(rowNum, 1, 1, 12).setWrap(true);
   }
 
-  logSheet.appendRow([todayLabel, bank, resolvedBranch, seller, hist, email]);
   return { ok: true };
 }
 

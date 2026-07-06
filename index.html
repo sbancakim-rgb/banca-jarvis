@@ -634,6 +634,41 @@
 
     loadBranchList();
 
+    // ─── 방문/판매자 은행·지점 연동 ─────────────────────────────────────────
+    function syncPicker(fromBank, fromBranch, toBank, toBranch) {
+      toBank.value = fromBank.value;
+      toBank.dispatchEvent(new Event('change'));
+      // 지점 옵션이 채워진 후 값 설정
+      setTimeout(() => {
+        toBranch.value = fromBranch.value;
+        toBranch.dispatchEvent(new Event('change'));
+      }, 300);
+    }
+
+    let _syncing = false;
+    const vBank = document.getElementById('visitBankSelect');
+    const vBranch = document.getElementById('visitBranchSelect');
+    const sBank = document.getElementById('sellerBankSelect');
+    const sBranch = document.getElementById('sellerBranchSelect');
+
+    [vBank, vBranch].forEach(el => {
+      el.addEventListener('change', () => {
+        if (_syncing) return;
+        _syncing = true;
+        syncPicker(vBank, vBranch, sBank, sBranch);
+        setTimeout(() => { _syncing = false; }, 400);
+      });
+    });
+
+    [sBank, sBranch].forEach(el => {
+      el.addEventListener('change', () => {
+        if (_syncing) return;
+        _syncing = true;
+        syncPicker(sBank, sBranch, vBank, vBranch);
+        setTimeout(() => { _syncing = false; }, 400);
+      });
+    });
+
     // ─── ③ 방문 달력 ─────────────────────────────────────────────────────────
     let calMonthOffset = 0;
     const calGrid      = document.getElementById('calGrid');
