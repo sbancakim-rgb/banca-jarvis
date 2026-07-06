@@ -13,42 +13,6 @@ function getSS() {
   return SpreadsheetApp.openById(DATA_SPREADSHEET_ID);
 }
 
-// 일회성 마이그레이션: 시스템 시트만 새 스프레드시트로 복사 (기존 파일은 건드리지 않음).
-// Apps Script 편집기에서 이 함수만 선택해 "실행"으로 한 번 돌리면 됨. 실행 후 이 함수는 지워도 무방.
-function migrateSystemSheetsToNewSpreadsheet() {
-  var NEW_SS_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4';
-  var srcSs = SpreadsheetApp.getActiveSpreadsheet(); // 마이그레이션 원본(구 파일)은 의도적으로 컨테이너 자신을 참조
-  var destSs = SpreadsheetApp.openById(NEW_SS_ID);
-  var namesToMove = [SHEET_SELLER, SHEET_PROPOSAL, SHEET_LOG, SHEET_USERS, SHEET_DELETED];
-  var results = [];
-  namesToMove.forEach(function (name) {
-    var sheet = srcSs.getSheetByName(name);
-    if (!sheet) { results.push(name + ': 원본에 없음(건너뜀)'); return; }
-    var existing = destSs.getSheetByName(name);
-    if (existing) { destSs.deleteSheet(existing); } // 재실행 시 중복 방지
-    var copied = sheet.copyTo(destSs);
-    copied.setName(name);
-    results.push(name + ': 복사 완료 (' + copied.getLastRow() + '행)');
-  });
-  // 새 파일에 기본으로 생성된 빈 "시트1"이 있으면 정리
-  var defaultSheet = destSs.getSheetByName('시트1');
-  if (defaultSheet && destSs.getSheets().length > 1) destSs.deleteSheet(defaultSheet);
-  Logger.log(results.join('\n'));
-  return results;
-}
-
-// 일회성: 새 스프레드시트에 사용자목록 시트 생성 (헤더 + 소유자 본인 등록)
-function createUsersSheetInNewSpreadsheet() {
-  var NEW_SS_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4';
-  var destSs = SpreadsheetApp.openById(NEW_SS_ID);
-  if (destSs.getSheetByName(SHEET_USERS)) return '이미 존재함';
-  var sheet = destSs.insertSheet(SHEET_USERS);
-  sheet.appendRow(['이름', '이메일']);
-  sheet.appendRow(['김용국', 'sbanca.kim@gmail.com']);
-  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
-  return '사용자목록 생성 완료';
-}
-
 function doGet(e) {
   var action = e.parameter.action;
   var text = e.parameter.text || '';
