@@ -22,6 +22,17 @@
     --border: #e2e8f0;
   }
   * { box-sizing: border-box; }
+  html {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  input, textarea, select {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -120,14 +131,21 @@
     border-radius: 10px;
     background: #f8fafc;
     color: var(--text);
-    resize: vertical;
+    resize: none;
     min-height: 38px;
     font-family: inherit;
     line-height: 1.5;
+    overflow-y: hidden;
   }
   .field-group textarea:focus { outline: 2px solid var(--primary); border-color: transparent; background: #fff; }
   .field-group textarea.has-data { background: #fff; border-color: #bfdbfe; }
+  .field-group .field-tag { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 6px; }
   .seller-meta { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; padding: 8px 12px; background: #eff6ff; border-radius: 8px; }
+
+  /* 이름/직책 수정 details: 검은 삼각형 마커 제거 */
+  #sellerEditDetails summary { list-style: none; }
+  #sellerEditDetails summary::-webkit-details-marker { display: none; }
+  #sellerEditDetails summary::marker { content: ''; }
 
   /* 달력 */
   .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -147,7 +165,12 @@
   .cal-cell.empty { background: transparent; cursor: default; }
   .cal-cell.selected { background: var(--primary); color: #fff; }
   .cal-cell.has-visit { border-color: var(--primary); }
+  .cal-cell.weekend { color: var(--danger); }
+  .cal-cell.selected.weekend { color: #fff; }
+  .cal-cell.today { background: #1e293b; color: #fff; font-weight: 800; box-shadow: 0 0 0 2px #1e293b; }
+  .cal-cell.today.selected { background: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
   .cal-day-label { font-size: 11px; color: var(--muted); text-align: center; }
+  .cal-day-label.weekend { color: var(--danger); }
   #calendarResult { margin-top: 14px; }
   .visit-item {
     display: flex; align-items: flex-start; gap: 8px;
@@ -158,6 +181,7 @@
   .visit-num { font-size: 12px; font-weight: 700; color: var(--primary); min-width: 18px; padding-top: 1px; }
   .visit-text { flex: 1; }
   .visit-seller { font-size: 12px; color: var(--muted); }
+  .visit-type-tag { font-weight: 300; color: var(--muted); font-size: 12.5px; }
 
   /* 대시보드 */
   .dash-bank { margin-bottom: 16px; }
@@ -178,6 +202,8 @@
   .dash-summary-track { position: relative; height: 10px; border-radius: 6px; background: #fee2e2; overflow: hidden; }
   .dash-summary-fill { position: absolute; left: 0; top: 0; bottom: 0; background: #16a34a; border-radius: 6px 0 0 6px; }
   .dash-summary-pct { text-align: right; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .dash-summary-extra { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--text); }
+  .dash-summary-extra b { color: var(--primary); }
   .branch-detail { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
   .branch-chip { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
   .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
@@ -205,10 +231,17 @@
       <div class="date-row">
         <label for="visitDateInput">방문일</label>
         <input type="date" id="visitDateInput" />
+        <span id="visitDateWeekday" style="font-size:13px;color:var(--muted);white-space:nowrap;"></span>
       </div>
       <div class="select-row">
         <select id="visitBankSelect"><option value="">은행 선택</option></select>
         <select id="visitBranchSelect"><option value="">지점 선택</option></select>
+        <select id="visitTypeSelect">
+          <option value="지점방문">지점방문</option>
+          <option value="통화">통화</option>
+          <option value="제안서">제안서</option>
+          <option value="기타">기타</option>
+        </select>
       </div>
       <button id="logVisitBtn" class="btn-primary" style="margin-top:10px;">방문 입력</button>
       <div id="visitStatus" class="status-box"></div>
@@ -281,9 +314,9 @@
       <div id="sellerLoadStatus" class="status-box"></div>
     </div>
 
-    <!-- ③ 방문 달력 -->
+    <!-- ③ 활동달력 -->
     <div class="card">
-      <h3>방문 달력</h3>
+      <h3>활동달력</h3>
       <div class="cal-nav">
         <button id="calPrev" class="btn-neutral">‹ 이전</button>
         <div class="cal-title" id="calTitle"></div>
@@ -368,8 +401,38 @@
     }
 
     // ─── 날짜 입력 초기화 ────────────────────────────────────────────────────
+    const WEEKDAY_NAMES = ['일','월','화','수','목','금','토'];
     const visitDateInput = document.getElementById('visitDateInput');
+    const visitDateWeekday = document.getElementById('visitDateWeekday');
     visitDateInput.value = todayLocalISO();
+    function updateVisitDateWeekday() {
+      if (!visitDateInput.value) { visitDateWeekday.textContent = ''; return; }
+      const [y,m,d] = visitDateInput.value.split('-').map(Number);
+      const dt = new Date(y, m-1, d);
+      visitDateWeekday.textContent = '(' + WEEKDAY_NAMES[dt.getDay()] + ')';
+    }
+    visitDateInput.addEventListener('change', updateVisitDateWeekday);
+    updateVisitDateWeekday();
+
+    // ─── 공휴일 (매년 갱신 필요) ─────────────────────────────────────────────
+    const HOLIDAYS = new Set([
+      // 2025
+      '2025-01-01','2025-01-27','2025-01-28','2025-01-29','2025-01-30',
+      '2025-03-01','2025-03-03','2025-05-05','2025-05-06','2025-06-06',
+      '2025-08-15','2025-10-03','2025-10-05','2025-10-06','2025-10-07',
+      '2025-10-08','2025-10-09','2025-12-25',
+      // 2026
+      '2026-01-01','2026-02-16','2026-02-17','2026-02-18',
+      '2026-03-01','2026-03-02','2026-05-05','2026-05-24','2026-05-25',
+      '2026-06-06','2026-08-15','2026-08-17','2026-09-24','2026-09-25',
+      '2026-09-26','2026-10-03','2026-10-09','2026-12-25',
+      // 2027
+      '2027-01-01','2027-02-06','2027-02-07','2027-02-08','2027-02-09',
+      '2027-03-01','2027-05-05','2027-06-06','2027-08-15','2027-08-16',
+      '2027-09-14','2027-09-15','2027-09-16','2027-10-03','2027-10-04',
+      '2027-10-09','2027-10-11','2027-12-25'
+    ]);
+    function isHoliday(dateStr) { return HOLIDAYS.has(dateStr); }
 
     // ─── 은행/지점/판매자 드롭다운 ───────────────────────────────────────────
     let branchListData = [];
@@ -430,7 +493,9 @@
       FIELD_KEYS.forEach(k => {
         const ta = document.getElementById('field_' + k);
         ta.value = '';
+        ta.dataset.initial = '';
         ta.classList.remove('has-data');
+        autoGrow(ta);
       });
       document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller;
       fieldsDiv.style.display = 'block';
@@ -450,7 +515,9 @@
             const ta = document.getElementById('field_' + k);
             const v = s[k] || '';
             ta.value = v;
+            ta.dataset.initial = v;
             if (v) ta.classList.add('has-data');
+            autoGrow(ta);
           });
           const title = s.직책 || '';
           if (title) {
@@ -485,6 +552,42 @@
 
     const FIELD_KEYS = ['가족관계','자택','판매성향','방문이력','기타대화내용'];
 
+    // ─── 텍스트박스 자동 높이 조절 (최대 10줄, 이후 스크롤) ────────────────────
+    function autoGrow(ta) {
+      ta.style.height = 'auto';
+      const style = getComputedStyle(ta);
+      const lineHeight = parseFloat(style.lineHeight) || 21;
+      const paddingV = (parseFloat(style.paddingTop)||0) + (parseFloat(style.paddingBottom)||0);
+      const borderV = (parseFloat(style.borderTopWidth)||0) + (parseFloat(style.borderBottomWidth)||0);
+      const maxHeight = lineHeight * 10 + paddingV + borderV;
+      const needed = ta.scrollHeight;
+      ta.style.height = Math.min(needed, maxHeight) + 'px';
+      ta.style.overflowY = needed > maxHeight ? 'auto' : 'hidden';
+    }
+    FIELD_KEYS.forEach(k => {
+      const ta = document.getElementById('field_' + k);
+      ta.addEventListener('input', () => autoGrow(ta));
+    });
+
+    // ─── 저장 시 (연.월) 태그 자동 기록 ─────────────────────────────────────
+    function yearMonthTag() {
+      const d = new Date();
+      return (d.getFullYear() % 100) + '.' + (d.getMonth() + 1);
+    }
+    function buildTaggedValue(ta) {
+      const val = ta.value.trim();
+      const initial = ta.dataset.initial || '';
+      if (!val || val === initial) return val;
+      const tag = ' (' + yearMonthTag() + ')';
+      if (initial && val.startsWith(initial)) {
+        const newPart = val.slice(initial.length).replace(/\s+$/, '');
+        if (!newPart.trim()) return val;
+        if (newPart.includes(tag)) return initial + newPart;
+        return initial + newPart + tag;
+      }
+      return val.endsWith(tag) ? val : val + tag;
+    }
+
     function loadBranchList() {
       const url = getUrl();
       if (!url) return;
@@ -501,14 +604,15 @@
       const url    = getUrl();
       const bank   = document.getElementById('visitBankSelect').value;
       const branch = document.getElementById('visitBranchSelect').value;
+      const visitType = document.getElementById('visitTypeSelect').value;
       const date   = visitDateInput.value || todayLocalISO();
       const statusEl = document.getElementById('visitStatus');
       if (!url)            { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
       if (!bank || !branch){ showStatus(statusEl, '은행과 지점을 모두 선택해주세요.', true); return; }
       showStatus(statusEl, '입력 중...');
-      jsonpRequest(url, { action: 'logVisit', bank, branch, date }, data => {
+      jsonpRequest(url, { action: 'logVisit', bank, branch, date, visitType }, data => {
         if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
-        showStatus(statusEl, `✓ ${data.dateLabel}  ${bank} ${branch}  방문 입력 완료`);
+        showStatus(statusEl, `✓ ${data.dateLabel}  ${bank} ${branch}  (${visitType})  입력 완료`);
       });
     };
 
@@ -519,7 +623,9 @@
         const ta = document.getElementById('field_' + k);
         const v = candidate[k] || '';
         ta.value = v;
+        ta.dataset.initial = v;
         if (v) ta.classList.add('has-data'); else ta.classList.remove('has-data');
+        autoGrow(ta);
       });
       document.getElementById('archiveRestoreBox').style.display = 'none';
     }
@@ -601,7 +707,9 @@
         FIELD_KEYS.forEach(k => {
           const ta = document.getElementById('field_' + k);
           ta.value = '';
+          ta.dataset.initial = '';
           ta.classList.remove('has-data');
+          autoGrow(ta);
         });
         document.getElementById('archiveRestoreBox').style.display = 'none';
         // 드롭다운 옵션 업데이트
@@ -623,13 +731,16 @@
       if (!bank || !branch || !seller) { showStatus(statusEl, '은행, 지점, 판매자를 모두 선택해주세요.', true); return; }
       showStatus(statusEl, '저장 중...');
       const payload = { bank, branch, seller, date: todayLocalISO() };
-      FIELD_KEYS.forEach(k => { payload[k] = document.getElementById('field_' + k).value.trim(); });
+      FIELD_KEYS.forEach(k => { payload[k] = buildTaggedValue(document.getElementById('field_' + k)); });
       jsonpRequest(url, { action: 'saveSellerFields', data: JSON.stringify(payload) }, data => {
         if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
         showStatus(statusEl, '✓ 저장 완료');
         FIELD_KEYS.forEach(k => {
           const ta = document.getElementById('field_' + k);
+          ta.value = payload[k];
+          ta.dataset.initial = payload[k];
           if (ta.value) ta.classList.add('has-data');
+          autoGrow(ta);
         });
       });
     };
@@ -671,9 +782,9 @@
     const calTitle     = document.getElementById('calTitle');
     const calendarResult = document.getElementById('calendarResult');
 
-    ['일','월','화','수','목','금','토'].forEach(d => {
+    WEEKDAY_NAMES.forEach((d, i) => {
       const el = document.createElement('div');
-      el.className = 'cal-day-label';
+      el.className = 'cal-day-label' + (i===0||i===6 ? ' weekend' : '');
       el.textContent = d;
       calDayLabels.appendChild(el);
     });
@@ -686,15 +797,20 @@
       calTitle.textContent = year + '년 ' + (month+1) + '월';
       const firstDay = new Date(year, month, 1).getDay();
       const daysInMonth = new Date(year, month+1, 0).getDate();
+      const todayStr = todayLocalISO();
       calGrid.innerHTML = '';
       for (let i = 0; i < firstDay; i++) {
         const e = document.createElement('div'); e.className = 'cal-cell empty'; calGrid.appendChild(e);
       }
       for (let d = 1; d <= daysInMonth; d++) {
         const cell = document.createElement('div');
-        cell.className = 'cal-cell';
-        cell.textContent = d;
         const dateStr = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        const dow = new Date(year, month, d).getDay();
+        let cls = 'cal-cell';
+        if (dow === 0 || dow === 6 || isHoliday(dateStr)) cls += ' weekend';
+        if (dateStr === todayStr) cls += ' today';
+        cell.className = cls;
+        cell.textContent = d;
         cell.onclick = () => selectCalendarDate(dateStr, cell);
         calGrid.appendChild(cell);
       }
@@ -721,7 +837,7 @@
         const branchMap = new Map();
         data.visits.forEach(v => {
           const key = v.은행명 + '|' + v.지점명;
-          if (!branchMap.has(key)) branchMap.set(key, { 은행명: v.은행명, 지점명: v.지점명, sellers: [] });
+          if (!branchMap.has(key)) branchMap.set(key, { 은행명: v.은행명, 지점명: v.지점명, sellers: [], 방문유형: v.방문유형 });
           if (v.판매자명) branchMap.get(key).sellers.push(v);
         });
 
@@ -734,7 +850,8 @@
           numEl.textContent = num++ + '.';
           const textEl = document.createElement('div');
           textEl.className = 'visit-text';
-          textEl.innerHTML = '<strong>' + escapeHtml(g.은행명 + ' ' + g.지점명) + '</strong>';
+          textEl.innerHTML = '<strong>' + escapeHtml(g.은행명 + ' ' + g.지점명) + '</strong>' +
+            (g.방문유형 ? ' <span class="visit-type-tag">(' + escapeHtml(g.방문유형) + ')</span>' : '');
           if (g.sellers.length > 0) {
             textEl.innerHTML += '<div class="visit-seller">' +
               g.sellers.map(s => escapeHtml(s.판매자명)).join(', ') + '</div>';
@@ -754,9 +871,25 @@
     const dashboardList    = document.getElementById('dashboardList');
     const dashboardSummary = document.getElementById('dashboardSummary');
 
+    // 이번 달 1일부터 오늘까지 경과된 영업일수(주말/공휴일 제외) 계산
+    function countElapsedBusinessDays() {
+      const now = new Date();
+      const year = now.getFullYear(), month = now.getMonth(), today = now.getDate();
+      let count = 0;
+      for (let d = 1; d <= today; d++) {
+        const dt = new Date(year, month, d);
+        const dow = dt.getDay();
+        const dateStr = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        if (dow !== 0 && dow !== 6 && !isHoliday(dateStr)) count++;
+      }
+      return count;
+    }
+
     function renderDashboardSummary(banks) {
       const totals = banks.reduce((a,b) => { a.모수+=b.모수; a.당월방문+=b.당월방문; a.미방문+=b.미방문; return a; }, {모수:0,당월방문:0,미방문:0});
       const pct = totals.모수>0 ? Math.round((totals.당월방문/totals.모수)*100) : 0;
+      const businessDays = countElapsedBusinessDays();
+      const avgPerDay = businessDays>0 ? (totals.당월방문/businessDays).toFixed(1) : '0.0';
       dashboardSummary.innerHTML =
         '<div class="dash-summary-numbers">' +
           '<div class="dash-summary-item total"><div class="num">'+totals.모수+'</div><div class="lbl">총 모수</div></div>' +
@@ -764,7 +897,7 @@
           '<div class="dash-summary-item unvisited"><div class="num">'+totals.미방문+'</div><div class="lbl">미방문</div></div>' +
         '</div>' +
         '<div class="dash-summary-track"><div class="dash-summary-fill" style="width:'+pct+'%"></div></div>' +
-        '<div class="dash-summary-pct">'+pct+'% 진행</div>';
+        '<div class="dash-summary-extra"><span><b>'+pct+'%</b> 진행</span><span>영업일당 평균 방문수 <b>'+avgPerDay+'</b></span></div>';
     }
 
     function buildDashboardBank(b) {

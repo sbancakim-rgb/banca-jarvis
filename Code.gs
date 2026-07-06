@@ -30,7 +30,7 @@ function doGet(e) {
     } else if (action === 'recordForSeller') {
       result = handleRecordForSeller(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '', e.parameter.text || '', e.parameter.date || '');
     } else if (action === 'logVisit') {
-      result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '');
+      result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '', e.parameter.visitType || '');
     } else if (action === 'getSellerInfo') {
       result = handleGetSellerInfo(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '');
     } else if (action === 'saveSellerFields') {
@@ -607,7 +607,7 @@ function handleRecordForSeller(bank, branch, seller, text, date) {
 }
 
 // 방문 지점 입력: 방문로그에만 기록 (판매자 정보 시트는 건드리지 않음)
-function handleLogVisit(bank, branch, date) {
+function handleLogVisit(bank, branch, date, visitType) {
   if (!String(bank || '').trim() || !String(branch || '').trim()) {
     return { ok: false, message: '은행과 지점을 선택해주세요.' };
   }
@@ -617,7 +617,7 @@ function handleLogVisit(bank, branch, date) {
   var resolvedBranch = resolveBranchName(rows, bank, branch);
   var dateLabel = resolveDateLabel(date);
   var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
-  logSheet.appendRow([dateLabel, bank, resolvedBranch, '', '', email]);
+  logSheet.appendRow([dateLabel, bank, resolvedBranch, '', '', email, String(visitType || '지점방문').trim()]);
   return { ok: true, dateLabel: dateLabel, bank: bank, branch: resolvedBranch };
 }
 
@@ -818,7 +818,7 @@ function handleCalendarDay(dateStr) {
       if (seenBranchOnly[key]) return;
       seenBranchOnly[key] = true;
     }
-    visits.push({ 은행명: r[1], 지점명: r[2], 판매자명: seller, 방문이력: r[4] });
+    visits.push({ 은행명: r[1], 지점명: r[2], 판매자명: seller, 방문이력: r[4], 방문유형: String(r[6] || '').trim() || '지점방문' });
   });
 
   var branchSet = {};
