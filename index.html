@@ -191,7 +191,11 @@
 <body>
   <header>
     <div class="logo">방카 활동의 기록</div>
+    <div id="userBadge" style="font-size:13px;opacity:0.8;margin-top:4px;"></div>
   </header>
+
+  <!-- 로그인 오류 배너 -->
+  <div id="loginError" style="display:none;background:#dc2626;color:#fff;text-align:center;padding:12px 16px;font-size:14px;"></div>
 
   <div class="container">
 
@@ -221,6 +225,36 @@
 
       <div id="sellerFields" style="display:none; margin-top:14px;">
         <div id="sellerMeta" class="seller-meta"></div>
+
+        <!-- 이름/직책 수정 패널 -->
+        <details id="sellerEditDetails" style="margin-bottom:12px;">
+          <summary style="font-size:13px;color:var(--muted);cursor:pointer;user-select:none;">✏️ 이름 · 직책 수정</summary>
+          <div style="margin-top:10px;padding:12px;background:#f8fafc;border-radius:10px;border:1px solid var(--border);">
+            <div style="margin-bottom:10px;">
+              <label style="font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">직책 수정</label>
+              <div style="display:flex;gap:8px;">
+                <input id="editTitleInput" type="text" placeholder="새 직책 입력" style="flex:1;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+                <button id="saveTitleBtn" class="btn-primary" style="width:auto;padding:9px 16px;font-size:13px;">저장</button>
+              </div>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+            <div>
+              <label style="font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">판매자 교체 <span style="color:var(--danger);font-weight:400;">(기존 담당자 정보 보관 후 초기화)</span></label>
+              <div style="display:flex;gap:8px;">
+                <input id="editNameInput" type="text" placeholder="새 판매자 이름 입력" style="flex:1;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+                <button id="saveNameBtn" style="width:auto;padding:9px 16px;font-size:13px;background:var(--danger);">교체</button>
+              </div>
+            </div>
+            <div id="editStatus" class="status-box" style="margin-top:8px;"></div>
+          </div>
+        </details>
+
+        <!-- 이전 담당자 정보 복원 배너 -->
+        <div id="archiveRestoreBox" style="display:none;margin-bottom:12px;padding:12px;background:#eff6ff;border-radius:10px;border:1px solid #bfdbfe;">
+          <div id="archiveRestoreMsg" style="font-size:13px;color:#1e40af;margin-bottom:8px;"></div>
+          <div id="archiveCandidateList"></div>
+        </div>
+
         <div class="field-group">
           <label>가족관계</label>
           <textarea id="field_가족관계" rows="2" placeholder="예: 기혼, 자녀 2명"></textarea>
@@ -272,16 +306,37 @@
 
     <details class="settings">
       <summary>연결 설정</summary>
-      <input id="webAppUrl" type="text" placeholder="Apps Script 웹앱 URL" />
+      <input id="webAppUrl" type="text" placeholder="Apps Script 웹앱 URL (선택)" />
     </details>
   </div>
 
   <script>
     // ─── 공통 유틸 ───────────────────────────────────────────────────────────
+    const HARDCODED_URL = 'https://script.google.com/macros/s/AKfycbyo3aaLvJjbYE2_XmabUyybIDj4ZVST0EJoIJzPPj8gyBb4D2sm2yigCtHZ7T9EbalE/exec';
     const urlInput = document.getElementById('webAppUrl');
     urlInput.value = localStorage.getItem('webAppUrl') || '';
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
-    function getUrl() { return urlInput.value.trim(); }
+    function getUrl() { return urlInput.value.trim() || HARDCODED_URL; }
+
+    // ─── Google 계정 인증 ─────────────────────────────────────────────────────
+    function initUser() {
+      jsonpRequest(getUrl(), { action: 'getMe' }, data => {
+        if (data.ok) {
+          document.getElementById('userBadge').textContent = data.name + ' 님';
+        } else if (data.error === 'login_required') {
+          showLoginError('Google 계정으로 로그인이 필요합니다.');
+        } else if (data.error === 'not_registered') {
+          showLoginError('등록되지 않은 계정입니다 (' + (data.email || '') + '). 관리자에게 문의하세요.');
+        } else if (data.error === 'no_users_sheet') {
+          // 사용자목록 시트 없음 = 아직 다중사용자 설정 전. 오류 없이 진행.
+        }
+      });
+    }
+    function showLoginError(msg) {
+      const el = document.getElementById('loginError');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
 
     function todayLocalISO() {
       const d = new Date();
@@ -385,6 +440,7 @@
       showStatus(loadStatus, '기존 정보 불러오는 중...');
       jsonpRequest(url, { action: 'getSellerInfo', bank, branch, seller }, data => {
         hideStatus(loadStatus);
+        document.getElementById('archiveRestoreBox').style.display = 'none';
         if (data.error) { showStatus(loadStatus, '오류: ' + data.error, true); return; }
         if (data.ok && data.seller) {
           const s = data.seller;
@@ -394,9 +450,17 @@
             ta.value = v;
             if (v) ta.classList.add('has-data');
           });
-          if (s.직책) {
-            document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller + ' ' + s.직책;
+          const title = s.직책 || '';
+          if (title) {
+            document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller + ' ' + title;
+            document.getElementById('editTitleInput').value = title;
           }
+        } else {
+          // 데이터 없는 신규 판매자 → 이전 담당자 정보 탐색
+          const selectedOpt = document.getElementById('sellerSelect').selectedOptions[0];
+          const titleFromDropdown = selectedOpt ? (selectedOpt.textContent.replace(seller, '').trim()) : '';
+          if (titleFromDropdown) document.getElementById('editTitleInput').value = titleFromDropdown;
+          checkArchive(bank, seller, titleFromDropdown);
         }
       });
     }
@@ -443,6 +507,106 @@
       jsonpRequest(url, { action: 'logVisit', bank, branch, date }, data => {
         if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
         showStatus(statusEl, `✓ ${data.dateLabel}  ${bank} ${branch}  방문 입력 완료`);
+      });
+    };
+
+    // ─── ② 이름/직책 수정 ────────────────────────────────────────────────────
+    function applyArchivedData(candidate) {
+      const fields = ['가족관계','자택','판매성향','방문이력','기타대화내용'];
+      fields.forEach(k => {
+        const ta = document.getElementById('field_' + k);
+        const v = candidate[k] || '';
+        ta.value = v;
+        if (v) ta.classList.add('has-data'); else ta.classList.remove('has-data');
+      });
+      document.getElementById('archiveRestoreBox').style.display = 'none';
+    }
+
+    function checkArchive(bank, seller, title) {
+      const url = getUrl();
+      if (!url || !bank || !seller || !title) return;
+      jsonpRequest(url, { action: 'findArchivedSellers', bank, seller, title }, data => {
+        if (!data.ok || !data.candidates || data.candidates.length === 0) return;
+        const box = document.getElementById('archiveRestoreBox');
+        const msg = document.getElementById('archiveRestoreMsg');
+        const list = document.getElementById('archiveCandidateList');
+        list.innerHTML = '';
+        if (data.candidates.length === 1) {
+          const c = data.candidates[0];
+          msg.textContent = `이전 담당자(${c.지점명 || '구 지점'} 근무) 정보가 있습니다. 가져올까요?`;
+          const btn = document.createElement('button');
+          btn.className = 'btn-primary';
+          btn.style.cssText = 'width:auto;padding:8px 16px;font-size:13px;';
+          btn.textContent = '정보 가져오기';
+          btn.onclick = () => applyArchivedData(c);
+          list.appendChild(btn);
+        } else {
+          msg.textContent = `이름·직책이 같은 이전 담당자 정보가 ${data.candidates.length}건 있습니다. 가져올 정보를 선택하세요:`;
+          data.candidates.forEach((c, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;';
+            const info = document.createElement('span');
+            info.style.cssText = 'flex:1;font-size:12px;color:var(--text);';
+            info.textContent = `${i+1}. ${c.지점명 || '지점 미상'} · ${c.날짜 || '날짜 미상'}`;
+            const btn = document.createElement('button');
+            btn.className = 'btn-primary';
+            btn.style.cssText = 'width:auto;padding:6px 12px;font-size:12px;';
+            btn.textContent = '가져오기';
+            btn.onclick = () => applyArchivedData(c);
+            row.appendChild(info);
+            row.appendChild(btn);
+            list.appendChild(row);
+          });
+        }
+        box.style.display = 'block';
+      });
+    }
+
+    document.getElementById('saveTitleBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const newTitle = document.getElementById('editTitleInput').value.trim();
+      const statusEl = document.getElementById('editStatus');
+      if (!newTitle) { showStatus(statusEl, '새 직책을 입력해주세요.', true); return; }
+      showStatus(statusEl, '저장 중...');
+      jsonpRequest(url, { action: 'updateSellerTitle', bank, branch, seller, newTitle }, data => {
+        if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        showStatus(statusEl, '✓ 직책이 ' + data.newTitle + ' 으로 수정되었습니다.');
+        document.getElementById('sellerMeta').textContent =
+          bank + ' ' + branch + ' · ' + seller + ' ' + data.newTitle;
+        // 드롭다운 옵션 텍스트도 업데이트
+        const opt = document.getElementById('sellerSelect').selectedOptions[0];
+        if (opt) opt.textContent = seller + (data.newTitle ? ' ' + data.newTitle : '');
+      });
+    };
+
+    document.getElementById('saveNameBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const newName = document.getElementById('editNameInput').value.trim();
+      const statusEl = document.getElementById('editStatus');
+      if (!newName) { showStatus(statusEl, '새 판매자 이름을 입력해주세요.', true); return; }
+      if (!confirm(`"${seller}"의 모든 정보를 보관 처리하고 "${newName}"으로 교체합니다. 계속할까요?`)) return;
+      showStatus(statusEl, '처리 중...');
+      jsonpRequest(url, { action: 'updateSellerName', bank, branch, seller, newName }, data => {
+        if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        showStatus(statusEl, `✓ "${data.oldName}" → "${data.newName}" 교체 완료. 필드가 초기화되었습니다.`);
+        // 필드 초기화
+        FIELD_KEYS.forEach(k => {
+          const ta = document.getElementById('field_' + k);
+          ta.value = '';
+          ta.classList.remove('has-data');
+        });
+        document.getElementById('archiveRestoreBox').style.display = 'none';
+        // 드롭다운 옵션 업데이트
+        const opt = document.getElementById('sellerSelect').selectedOptions[0];
+        if (opt) { opt.value = data.newName; opt.textContent = data.newName; }
+        document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + data.newName;
+        document.getElementById('editNameInput').value = '';
       });
     };
 
@@ -633,6 +797,7 @@
     };
     document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
     loadDashboard();
+    initUser();
   </script>
 </body>
 </html>
