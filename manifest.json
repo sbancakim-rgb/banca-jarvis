@@ -1,6 +1,6 @@
 {
-  "name": "Banca Jarvis",
-  "short_name": "Banca Jarvis",
+  "name": "방카 업무효율화 시스템",
+  "short_name": "방카업무",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

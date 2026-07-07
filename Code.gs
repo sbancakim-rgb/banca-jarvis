@@ -72,6 +72,12 @@ function doGet(e) {
       result = handleSetTaskAlarm(e.parameter.id || '', e.parameter.alarm || '');
     } else if (action === 'listCompletedTasks') {
       result = handleListCompletedTasks();
+    } else if (action === 'deleteCompletedTask') {
+      result = handleDeleteCompletedTask(e.parameter.id || '');
+    } else if (action === 'addNewSeller') {
+      result = handleAddNewSeller(e.parameter.bank || '', e.parameter.branch || '', e.parameter.sellerName || '', e.parameter.title || '');
+    } else if (action === 'deleteSeller') {
+      result = handleDeleteSeller(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '');
     } else if (action === 'dashboard') {
       result = handleDashboard();
     } else if (action === 'dashboardBank') {
@@ -715,6 +721,59 @@ function handleUpdateSellerName(bank, branch, seller, newName) {
   return { ok: true, oldName: String(seller).trim(), newName: newNameTrimmed };
 }
 
+// 지점 내 판매자 수 증가: 다른 필드/판매자를 건드리지 않고 새 행 1개만 추가
+function handleAddNewSeller(bank, branch, sellerName, title) {
+  bank = String(bank || '').trim();
+  branch = String(branch || '').trim();
+  sellerName = String(sellerName || '').trim();
+  title = String(title || '').trim();
+  if (!bank || !branch || !sellerName) return { ok: false, message: '은행, 지점, 판매자 이름을 입력해주세요.' };
+
+  var email = getCurrentUserEmail();
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
+  var rows = sheet.getDataRange().getValues();
+  var resolvedBranch = resolveBranchName(rows, bank, branch);
+
+  // 이미 같은 은행+지점+이름의 판매자가 있으면 중복 추가 방지
+  var existingIdx = findBestSellerRow(rows, bank, resolvedBranch, sellerName, title);
+  if (existingIdx !== -1) {
+    var existingName = String(rows[existingIdx][3] || '').trim();
+    if (normalizeText(existingName) === normalizeText(sellerName)) {
+      return { ok: false, message: '이미 등록된 판매자입니다.' };
+    }
+  }
+
+  var todayLabel = resolveDateLabel('');
+  sheet.appendRow([todayLabel, bank, resolvedBranch, sellerName, title, '', '', '', '', '', '', email]);
+  sheet.getRange(sheet.getLastRow(), 1, 1, 12).setWrap(true);
+  return { ok: true };
+}
+
+// 지점 내 판매자 수 감소: 해당 판매자 행만 삭제된 판매자 시트로 이동 후 원본에서 제거 (다른 행은 그대로 유지)
+function handleDeleteSeller(bank, branch, seller) {
+  if (!bank || !branch || !seller) return { ok: false, message: '은행, 지점, 판매자를 모두 선택해주세요.' };
+  var email = getCurrentUserEmail().toLowerCase();
+  var ss = getSS();
+  var sheet = ss.getSheetByName(SHEET_SELLER);
+  var rows = sheet.getDataRange().getValues();
+  var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
+  if (rowIdx === -1) return { ok: false, message: '판매자를 찾을 수 없습니다.' };
+  var rowEmail = String(rows[rowIdx][11] || '').trim().toLowerCase();
+  if (email && rowEmail && rowEmail !== email) return { ok: false, message: '다른 담당자의 판매자입니다.' };
+
+  var delSheet = ss.getSheetByName(SHEET_DELETED);
+  if (!delSheet) {
+    delSheet = ss.insertSheet(SHEET_DELETED);
+    delSheet.appendRow(['날짜', '은행명', '지점명', '판매자명', '직책', '가족관계', '자택', '판매성향', '방문이력', '기타대화내용', '영업대상', '담당자이메일', '삭제일']);
+  }
+  var oldRow = rows[rowIdx];
+  delSheet.appendRow(oldRow.slice(0, 12).concat([Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd')]));
+  delSheet.getRange(delSheet.getLastRow(), 1, 1, 13).setWrap(true);
+
+  sheet.deleteRow(rowIdx + 1);
+  return { ok: true };
+}
+
 // 이전 담당자 정보 찾기: 은행+이름+직책 기준으로 삭제된 판매자 시트 및 다른 사용자의 판매자정보를 탐색
 // 1건이면 자동 복원용, 2건 이상이면 후보 목록 반환
 function handleFindArchivedSellers(bank, sellerName, title) {
@@ -1205,6 +1264,20 @@ function handleListCompletedTasks() {
   }
   tasks.sort(function (a, b) { return b.처리일시.localeCompare(a.처리일시); });
   return { ok: true, tasks: tasks };
+}
+
+// 완료된 업무 완전 삭제
+function handleDeleteCompletedTask(id) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var sheet = getTasksDoneSheet();
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === id) {
+      sheet.deleteRow(i + 1);
+      return { ok: true };
+    }
+  }
+  return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
 }
 
 function callClaudeText(prompt) {

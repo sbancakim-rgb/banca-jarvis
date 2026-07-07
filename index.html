@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>방카 활동의 기록</title>
+<title>방카 업무효율화 시스템</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#1d4ed8" />
@@ -48,8 +48,8 @@
     border-radius: 16px;
     padding: 18px;
     margin-top: 16px;
-    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
-    border: 1px solid var(--border);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+    border: 1.5px solid #cbd5e1;
   }
   .card h3 {
     margin: 0 0 14px;
@@ -250,7 +250,7 @@
 </head>
 <body>
   <header>
-    <div class="logo">방카 활동의 기록</div>
+    <div class="logo">방카 업무효율화 시스템</div>
     <div id="userBadge" style="font-size:13px;opacity:0.8;margin-top:4px;"></div>
   </header>
 
@@ -290,6 +290,16 @@
       </div>
       <select class="sel-full" id="sellerSelect"><option value="">판매자 선택</option></select>
 
+      <details id="newSellerDetails" style="margin-top:8px;">
+        <summary style="font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none;">+ 새 판매자 추가 (지점 내 인원 증가 시)</summary>
+        <div style="margin-top:8px;padding:10px;background:#f8fafc;border-radius:10px;border:1px solid var(--border);">
+          <input id="newSellerNameInput" type="text" placeholder="이름" style="width:100%;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+          <input id="newSellerTitleInput" type="text" placeholder="직책" style="width:100%;margin-top:6px;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+          <button id="addNewSellerBtn" class="btn-primary" style="margin-top:8px;">추가</button>
+          <div id="newSellerStatus" class="status-box" style="margin-top:6px;"></div>
+        </div>
+      </details>
+
       <div id="sellerFields" style="display:none; margin-top:14px;">
         <div id="sellerMeta" class="seller-meta"></div>
 
@@ -311,6 +321,11 @@
                 <input id="editNameInput" type="text" placeholder="새 판매자 이름 입력" style="flex:1;padding:9px 10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
                 <button id="saveNameBtn" style="width:auto;padding:9px 16px;font-size:13px;background:var(--danger);">교체</button>
               </div>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;" />
+            <div>
+              <label style="font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">판매자 삭제 <span style="color:var(--danger);font-weight:400;">(지점 내 인원 감소 시, 정보는 보관됨)</span></label>
+              <button id="deleteSellerBtn" style="width:auto;padding:9px 16px;font-size:13px;background:var(--danger);">이 판매자 삭제</button>
             </div>
             <div id="editStatus" class="status-box" style="margin-top:8px;"></div>
           </div>
@@ -839,6 +854,40 @@
       });
     };
 
+    document.getElementById('deleteSellerBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const statusEl = document.getElementById('editStatus');
+      if (!confirm(`"${seller}" 판매자를 삭제하시겠습니까? (정보는 삭제된 판매자 시트로 보관됩니다)`)) return;
+      showStatus(statusEl, '삭제 중...');
+      jsonpRequest(url, { action: 'deleteSeller', bank, branch, seller }, data => {
+        if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        document.getElementById('sellerFields').style.display = 'none';
+        sellerPicker.setBranch(branch); // 판매자 드롭다운 새로고침
+      });
+    };
+
+    document.getElementById('addNewSellerBtn').onclick = () => {
+      const url    = getUrl();
+      const bank   = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const sellerName = document.getElementById('newSellerNameInput').value.trim();
+      const title = document.getElementById('newSellerTitleInput').value.trim();
+      const statusEl = document.getElementById('newSellerStatus');
+      if (!bank || !branch) { showStatus(statusEl, '은행과 지점을 먼저 선택해주세요.', true); return; }
+      if (!sellerName) { showStatus(statusEl, '판매자 이름을 입력해주세요.', true); return; }
+      showStatus(statusEl, '추가 중...');
+      jsonpRequest(url, { action: 'addNewSeller', bank, branch, sellerName, title }, data => {
+        if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        showStatus(statusEl, '✓ 추가 완료');
+        document.getElementById('newSellerNameInput').value = '';
+        document.getElementById('newSellerTitleInput').value = '';
+        sellerPicker.setBranch(branch); // 판매자 드롭다운 새로고침
+      });
+    };
+
     // ─── ② 판매자 정보 저장 ──────────────────────────────────────────────────
     document.getElementById('saveSellerBtn').onclick = () => {
       const url    = getUrl();
@@ -949,7 +998,7 @@
         calendarResult.innerHTML = '';
         const header = document.createElement('div');
         header.style.cssText = 'font-weight:700;margin-bottom:10px;font-size:13.5px;';
-        header.textContent = '방문 ' + data.branchCount + '개 지점 (판매자 ' + data.sellerCount + '명)';
+        header.textContent = '방문 ' + data.branchCount + '개 지점';
         calendarResult.appendChild(header);
 
         // 지점별로 묶어서 번호 매기기 (지점 기준으로 넘버링, 판매자는 들여쓰기)
@@ -1308,13 +1357,23 @@
       const start = (completedTasksPage - 1) * TASK_DONE_PAGE_SIZE;
       const pageItems = completedTasksAll.slice(start, start + TASK_DONE_PAGE_SIZE);
 
-      container.innerHTML = pageItems.map(t => `
-        <div class="task-done-item">
-          <div class="task-item-date">${escapeHtml(t.입력일)} → 완료 ${escapeHtml(t.처리일시)}</div>
-          <div>${taskTargetLine(t)}</div>
-          <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
-        </div>
-      `).join('');
+      container.innerHTML = '';
+      pageItems.forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'task-done-item';
+        div.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div style="flex:1;">
+              <div class="task-item-date">${escapeHtml(t.입력일)} → 완료 ${escapeHtml(t.처리일시)}</div>
+              <div>${taskTargetLine(t)}</div>
+              <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
+            </div>
+            <button class="task-done-delete-btn task-icon-btn" title="삭제" style="color:var(--danger);flex-shrink:0;">✕</button>
+          </div>
+        `;
+        div.querySelector('.task-done-delete-btn').onclick = () => deleteCompletedTask(t.id);
+        container.appendChild(div);
+      });
 
       if (totalPages > 1) {
         const pager = document.createElement('div');
@@ -1329,6 +1388,16 @@
         }
         container.appendChild(pager);
       }
+    }
+
+    function deleteCompletedTask(id) {
+      if (!confirm('이 완료 기록을 삭제하시겠습니까?')) return;
+      const url = getUrl();
+      jsonpRequest(url, { action: 'deleteCompletedTask', id }, data => {
+        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
+        completedTasksAll = completedTasksAll.filter(t => t.id !== id);
+        renderCompletedTasksPage();
+      });
     }
 
     document.querySelector('.task-done-details').addEventListener('toggle', function () {
