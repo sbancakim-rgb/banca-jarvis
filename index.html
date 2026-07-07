@@ -233,7 +233,7 @@
     background: #fff; color: var(--text); font-size: 13px; cursor: pointer;
     display: flex; align-items: center; justify-content: center; padding: 0;
   }
-  .task-item-bottom { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .task-item-bottom { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .task-complete-btn { width: auto; padding: 7px 14px; font-size: 12.5px; background: var(--primary); }
   .task-done-details { margin-top: 14px; }
   .task-done-details summary { font-size: 13px; color: var(--muted); cursor: pointer; padding: 6px 0; }
@@ -399,6 +399,32 @@
           <button id="alarmClearBtn" class="btn-neutral">알람 해제</button>
         </div>
         <button id="alarmCancelBtn" class="btn-neutral" style="margin-top:8px;background:transparent;color:var(--muted);">취소</button>
+      </div>
+    </div>
+
+    <!-- 업무 수정 팝업 -->
+    <div id="taskEditModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:100;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:20px;width:calc(100% - 48px);max-width:360px;max-height:calc(100% - 64px);overflow-y:auto;">
+        <h3 style="margin:0 0 14px;font-size:16px;">✏️ 업무 수정</h3>
+
+        <div class="task-target-toggle">
+          <button type="button" id="taskEditTargetBizBtn" class="task-toggle-btn active">거래처 선택</button>
+          <button type="button" id="taskEditTargetTextBtn" class="task-toggle-btn">직접 입력</button>
+        </div>
+
+        <div id="taskEditTargetBiz" class="select-row" style="margin-top:8px;">
+          <select id="taskEditBankSelect"><option value="">은행 선택</option></select>
+          <select id="taskEditBranchSelect"><option value="">지점 선택</option></select>
+        </div>
+        <select class="sel-full" id="taskEditSellerSelect" style="display:none;"><option value="">판매자 선택(선택 안 해도 됨)</option></select>
+        <input id="taskEditTargetTextInput" type="text" placeholder="예: 내부 서류 정리" style="display:none;width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+
+        <textarea id="taskEditMemoInput" rows="3" placeholder="할 일 메모 입력" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;font-size:14px;font-family:inherit;resize:none;"></textarea>
+
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          <button id="taskEditSaveBtn" class="btn-primary">저장</button>
+        </div>
+        <button id="taskEditCancelBtn" class="btn-neutral" style="margin-top:8px;background:transparent;color:var(--muted);">취소</button>
       </div>
     </div>
 
@@ -625,6 +651,14 @@
       null
     );
 
+    const taskEditPicker = makePicker(
+      document.getElementById('taskEditBankSelect'),
+      document.getElementById('taskEditBranchSelect'),
+      document.getElementById('taskEditSellerSelect'),
+      '판매자 선택(선택 안 해도 됨)',
+      null
+    );
+
     // 은행/지점 바뀌면 판매자 필드 숨김
     ['sellerBankSelect','sellerBranchSelect'].forEach(id => {
       document.getElementById(id).addEventListener('change', () => {
@@ -680,6 +714,7 @@
         visitPicker.populate();
         sellerPicker.populate();
         taskPicker.populate();
+        taskEditPicker.populate();
       });
     }
 
@@ -1114,12 +1149,14 @@
             </div>
           </div>
           <div class="task-item-bottom">
+            <button class="task-edit-btn btn-neutral" style="width:auto;padding:7px 14px;font-size:12.5px;">수정</button>
             <button class="task-complete-btn">처리완료</button>
           </div>
         `;
         div.querySelector('.task-up-btn').onclick = () => moveTask(t.id, 'up');
         div.querySelector('.task-down-btn').onclick = () => moveTask(t.id, 'down');
         div.querySelector('.task-alarm-btn').onclick = () => openAlarmModal(t.id, t.알람일시);
+        div.querySelector('.task-edit-btn').onclick = () => openTaskEditModal(t);
         div.querySelector('.task-complete-btn').onclick = () => completeTask(t.id);
         listEl.appendChild(div);
       });
@@ -1184,8 +1221,116 @@
       });
     };
 
-    // ─── 완료된 업무 목록 (펼칠 때 1회 로드) ───────────────────────────────────
+    // ─── 업무 수정 팝업 ───────────────────────────────────────────────────────
+    let taskEditMode = '거래처';
+    let taskEditTargetId = null;
+    const taskEditModalOverlay = document.getElementById('taskEditModalOverlay');
+    const taskEditTargetBizBtn = document.getElementById('taskEditTargetBizBtn');
+    const taskEditTargetTextBtn = document.getElementById('taskEditTargetTextBtn');
+    const taskEditTargetBiz = document.getElementById('taskEditTargetBiz');
+    const taskEditSellerSelect = document.getElementById('taskEditSellerSelect');
+    const taskEditTargetTextInput = document.getElementById('taskEditTargetTextInput');
+    const taskEditBankSelect = document.getElementById('taskEditBankSelect');
+    const taskEditBranchSelect = document.getElementById('taskEditBranchSelect');
+    const taskEditMemoInput = document.getElementById('taskEditMemoInput');
+
+    function setTaskEditMode(mode) {
+      taskEditMode = mode;
+      const isBiz = mode === '거래처';
+      taskEditTargetBizBtn.classList.toggle('active', isBiz);
+      taskEditTargetTextBtn.classList.toggle('active', !isBiz);
+      taskEditTargetBiz.style.display = isBiz ? 'flex' : 'none';
+      taskEditSellerSelect.style.display = isBiz ? 'block' : 'none';
+      taskEditTargetTextInput.style.display = isBiz ? 'none' : 'block';
+    }
+    taskEditTargetBizBtn.onclick = () => setTaskEditMode('거래처');
+    taskEditTargetTextBtn.onclick = () => setTaskEditMode('직접입력');
+
+    function openTaskEditModal(t) {
+      taskEditTargetId = t.id;
+      setTaskEditMode(t.대상유형 === '직접입력' ? '직접입력' : '거래처');
+      taskEditMemoInput.value = t.메모 || '';
+      if (t.대상유형 === '직접입력') {
+        taskEditTargetTextInput.value = t.대상텍스트 || '';
+        taskEditBankSelect.value = '';
+        taskEditBranchSelect.innerHTML = '<option value="">지점 선택</option>';
+      } else {
+        taskEditTargetTextInput.value = '';
+        taskEditBankSelect.value = t.은행 || '';
+        taskEditBankSelect.dispatchEvent(new Event('change'));
+        setTimeout(() => {
+          taskEditBranchSelect.value = t.지점 || '';
+          taskEditBranchSelect.dispatchEvent(new Event('change'));
+          setTimeout(() => { taskEditSellerSelect.value = t.판매자명 || ''; }, 400);
+        }, 300);
+      }
+      taskEditModalOverlay.style.display = 'flex';
+    }
+    function closeTaskEditModal() { taskEditModalOverlay.style.display = 'none'; taskEditTargetId = null; }
+    document.getElementById('taskEditCancelBtn').onclick = closeTaskEditModal;
+
+    document.getElementById('taskEditSaveBtn').onclick = () => {
+      if (!taskEditTargetId) return;
+      const url = getUrl();
+      const memo = taskEditMemoInput.value.trim();
+      if (!memo) { alert('메모를 입력해주세요.'); return; }
+      const payload = { targetType: taskEditMode, memo };
+      if (taskEditMode === '거래처') {
+        const bank = taskEditBankSelect.value, branch = taskEditBranchSelect.value;
+        if (!bank || !branch) { alert('은행과 지점을 선택해주세요.'); return; }
+        payload.bank = bank;
+        payload.branch = branch;
+        const sellerOpt = taskEditSellerSelect.selectedOptions[0];
+        payload.seller = taskEditSellerSelect.value;
+        payload.title = sellerOpt ? sellerOpt.textContent.replace(taskEditSellerSelect.value, '').trim() : '';
+      } else {
+        const targetText = taskEditTargetTextInput.value.trim();
+        if (!targetText) { alert('대상을 입력해주세요.'); return; }
+        payload.targetText = targetText;
+      }
+      jsonpRequest(url, { action: 'editTask', id: taskEditTargetId, data: JSON.stringify(payload) }, data => {
+        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
+        closeTaskEditModal();
+        loadTasks();
+      });
+    };
+
+    // ─── 완료된 업무 목록 (펼칠 때 1회 로드, 페이지네이션) ─────────────────────
+    const TASK_DONE_PAGE_SIZE = 8;
     let completedTasksLoaded = false;
+    let completedTasksAll = [];
+    let completedTasksPage = 1;
+
+    function renderCompletedTasksPage() {
+      const container = document.getElementById('completedTaskList');
+      const totalPages = Math.max(1, Math.ceil(completedTasksAll.length / TASK_DONE_PAGE_SIZE));
+      if (completedTasksPage > totalPages) completedTasksPage = totalPages;
+      const start = (completedTasksPage - 1) * TASK_DONE_PAGE_SIZE;
+      const pageItems = completedTasksAll.slice(start, start + TASK_DONE_PAGE_SIZE);
+
+      container.innerHTML = pageItems.map(t => `
+        <div class="task-done-item">
+          <div class="task-item-date">${escapeHtml(t.입력일)} → 완료 ${escapeHtml(t.처리일시)}</div>
+          <div>${taskTargetLine(t)}</div>
+          <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
+        </div>
+      `).join('');
+
+      if (totalPages > 1) {
+        const pager = document.createElement('div');
+        pager.style.cssText = 'display:flex;justify-content:center;gap:6px;margin-top:10px;flex-wrap:wrap;';
+        for (let p = 1; p <= totalPages; p++) {
+          const btn = document.createElement('button');
+          btn.textContent = String(p);
+          btn.style.cssText = 'width:auto;padding:6px 11px;font-size:12px;border-radius:8px;border:1px solid var(--border);cursor:pointer;' +
+            (p === completedTasksPage ? 'background:var(--primary);color:#fff;border-color:var(--primary);' : 'background:#fff;color:var(--text);');
+          btn.onclick = () => { completedTasksPage = p; renderCompletedTasksPage(); };
+          pager.appendChild(btn);
+        }
+        container.appendChild(pager);
+      }
+    }
+
     document.querySelector('.task-done-details').addEventListener('toggle', function () {
       if (!this.open || completedTasksLoaded) return;
       completedTasksLoaded = true;
@@ -1195,13 +1340,9 @@
       jsonpRequest(url, { action: 'listCompletedTasks' }, data => {
         if (data.error || !data.tasks) { container.textContent = '오류: ' + (data.error || ''); return; }
         if (!data.tasks.length) { container.textContent = '완료된 업무가 없습니다.'; return; }
-        container.innerHTML = data.tasks.map(t => `
-          <div class="task-done-item">
-            <div class="task-item-date">${escapeHtml(t.입력일)} → 완료 ${escapeHtml(t.처리일시)}</div>
-            <div>${taskTargetLine(t)}</div>
-            <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
-          </div>
-        `).join('');
+        completedTasksAll = data.tasks;
+        completedTasksPage = 1;
+        renderCompletedTasksPage();
       });
     });
 

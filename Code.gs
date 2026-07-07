@@ -62,6 +62,8 @@ function doGet(e) {
       result = handleListTasks();
     } else if (action === 'addTask') {
       result = handleAddTask(JSON.parse(e.parameter.data));
+    } else if (action === 'editTask') {
+      result = handleEditTask(e.parameter.id || '', JSON.parse(e.parameter.data));
     } else if (action === 'completeTask') {
       result = handleCompleteTask(e.parameter.id || '');
     } else if (action === 'moveTask') {
@@ -1098,6 +1100,30 @@ function handleAddTask(data) {
     email
   ]);
   return { ok: true, id: id };
+}
+
+// 업무 내용 수정 (대상/메모 변경, 순서·입력일·알람은 유지)
+function handleEditTask(id, data) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var sheet = getTasksSheet();
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === id) {
+      var targetType = String(data.targetType || '거래처') === '직접입력' ? '직접입력' : '거래처';
+      var rowNum = i + 1;
+      sheet.getRange(rowNum, 4, 1, 6).setValues([[
+        targetType,
+        targetType === '거래처' ? String(data.bank || '').trim() : '',
+        targetType === '거래처' ? String(data.branch || '').trim() : '',
+        targetType === '거래처' ? String(data.seller || '').trim() : '',
+        targetType === '거래처' ? String(data.title || '').trim() : '',
+        targetType === '직접입력' ? String(data.targetText || '').trim() : ''
+      ]]);
+      sheet.getRange(rowNum, 10, 1, 1).setValue(String(data.memo || '').trim());
+      return { ok: true };
+    }
+  }
+  return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
 }
 
 // 업무 완료 처리: 완료된업무로 이동
