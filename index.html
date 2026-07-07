@@ -209,6 +209,40 @@
   .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
   .branch-chip.unvisited { background: #fee2e2; color: #b91c1c; }
 
+  /* 업무 LIST */
+  .task-target-toggle { display: flex; gap: 8px; }
+  .task-toggle-btn {
+    flex: 1; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: #f8fafc; color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; width: auto;
+  }
+  .task-toggle-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .task-item {
+    background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-top: 8px; font-size: 13.5px; line-height: 1.5;
+  }
+  .task-item.alarm-due { border-color: var(--danger); background: #fef2f2; }
+  .task-item-top { display: flex; align-items: flex-start; gap: 8px; }
+  .task-item-body { flex: 1; }
+  .task-item-date { font-size: 11px; color: var(--muted); }
+  .task-item-target { font-weight: 700; }
+  .task-item-memo { margin-top: 4px; }
+  .task-item-actions { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .task-icon-btn {
+    width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .task-item-bottom { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .task-complete-btn { width: auto; padding: 7px 14px; font-size: 12.5px; background: var(--primary); }
+  .task-done-details { margin-top: 14px; }
+  .task-done-details summary { font-size: 13px; color: var(--muted); cursor: pointer; padding: 6px 0; }
+  .task-done-item {
+    font-size: 12.5px; color: var(--text); padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .task-done-item:last-child { border-bottom: none; }
+  .task-done-item .task-item-date { color: var(--muted); }
+
   details.settings { margin-top: 24px; }
   details.settings summary { text-align: center; font-size: 11px; color: #94a3b8; cursor: pointer; padding: 8px; }
   details.settings input { width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; background: #f8fafc; }
@@ -327,7 +361,48 @@
       <div id="calendarResult"></div>
     </div>
 
-    <!-- ④ 이번 달 방문 현황 -->
+    <!-- ④ 업무 LIST -->
+    <div class="card">
+      <h3>업무 LIST</h3>
+
+      <div class="task-target-toggle">
+        <button type="button" id="taskTargetBizBtn" class="task-toggle-btn active">거래처 선택</button>
+        <button type="button" id="taskTargetTextBtn" class="task-toggle-btn">직접 입력</button>
+      </div>
+
+      <div id="taskTargetBiz" class="select-row" style="margin-top:8px;">
+        <select id="taskBankSelect"><option value="">은행 선택</option></select>
+        <select id="taskBranchSelect"><option value="">지점 선택</option></select>
+      </div>
+      <select class="sel-full" id="taskSellerSelect" style="display:none;"><option value="">판매자 선택(선택 안 해도 됨)</option></select>
+      <input id="taskTargetTextInput" type="text" placeholder="예: 내부 서류 정리" style="display:none;width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--border);font-size:13.5px;" />
+
+      <textarea id="taskMemoInput" rows="2" placeholder="할 일 메모 입력" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;font-size:14px;font-family:inherit;resize:none;"></textarea>
+      <button id="addTaskBtn" class="btn-primary" style="margin-top:10px;">추가</button>
+      <div id="taskAddStatus" class="status-box"></div>
+
+      <div id="taskList" style="margin-top:14px;"></div>
+
+      <details class="task-done-details">
+        <summary>완료된 업무 보기</summary>
+        <div id="completedTaskList" style="margin-top:10px;"></div>
+      </details>
+    </div>
+
+    <!-- 알람 설정 팝업 -->
+    <div id="alarmModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:100;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:20px;width:calc(100% - 48px);max-width:340px;">
+        <h3 style="margin:0 0 14px;font-size:16px;">⏰ 알람 설정</h3>
+        <input id="alarmDateTimeInput" type="datetime-local" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);font-size:14px;" />
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          <button id="alarmSaveBtn" class="btn-primary">저장</button>
+          <button id="alarmClearBtn" class="btn-neutral">알람 해제</button>
+        </div>
+        <button id="alarmCancelBtn" class="btn-neutral" style="margin-top:8px;background:transparent;color:var(--muted);">취소</button>
+      </div>
+    </div>
+
+    <!-- ⑤ 이번 달 방문 현황 -->
     <div class="card">
       <h3>이번 달 방문 현황</h3>
       <div id="dashboardSummary" class="dash-summary"></div>
@@ -542,6 +617,14 @@
       onSellerSelected
     );
 
+    const taskPicker = makePicker(
+      document.getElementById('taskBankSelect'),
+      document.getElementById('taskBranchSelect'),
+      document.getElementById('taskSellerSelect'),
+      '판매자 선택(선택 안 해도 됨)',
+      null
+    );
+
     // 은행/지점 바뀌면 판매자 필드 숨김
     ['sellerBankSelect','sellerBranchSelect'].forEach(id => {
       document.getElementById(id).addEventListener('change', () => {
@@ -596,6 +679,7 @@
         branchListData = data.branches;
         visitPicker.populate();
         sellerPicker.populate();
+        taskPicker.populate();
       });
     }
 
@@ -937,6 +1021,191 @@
       };
       return wrap;
     }
+
+    // ─── ④ 업무 LIST ─────────────────────────────────────────────────────────
+    let taskTargetMode = '거래처';
+    const taskTargetBizBtn = document.getElementById('taskTargetBizBtn');
+    const taskTargetTextBtn = document.getElementById('taskTargetTextBtn');
+    const taskTargetBiz = document.getElementById('taskTargetBiz');
+    const taskSellerSelect = document.getElementById('taskSellerSelect');
+    const taskTargetTextInput = document.getElementById('taskTargetTextInput');
+
+    function setTaskTargetMode(mode) {
+      taskTargetMode = mode;
+      const isBiz = mode === '거래처';
+      taskTargetBizBtn.classList.toggle('active', isBiz);
+      taskTargetTextBtn.classList.toggle('active', !isBiz);
+      taskTargetBiz.style.display = isBiz ? 'flex' : 'none';
+      taskSellerSelect.style.display = isBiz ? 'block' : 'none';
+      taskTargetTextInput.style.display = isBiz ? 'none' : 'block';
+    }
+    taskTargetBizBtn.onclick = () => setTaskTargetMode('거래처');
+    taskTargetTextBtn.onclick = () => setTaskTargetMode('직접입력');
+    setTaskTargetMode('거래처');
+
+    document.getElementById('addTaskBtn').onclick = () => {
+      const url = getUrl();
+      const statusEl = document.getElementById('taskAddStatus');
+      const memo = document.getElementById('taskMemoInput').value.trim();
+      if (!url) { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
+      if (!memo) { showStatus(statusEl, '메모를 입력해주세요.', true); return; }
+
+      const payload = { targetType: taskTargetMode, memo };
+      if (taskTargetMode === '거래처') {
+        const bank = document.getElementById('taskBankSelect').value;
+        const branch = document.getElementById('taskBranchSelect').value;
+        if (!bank || !branch) { showStatus(statusEl, '은행과 지점을 선택해주세요.', true); return; }
+        payload.bank = bank;
+        payload.branch = branch;
+        const sellerOpt = taskSellerSelect.selectedOptions[0];
+        payload.seller = taskSellerSelect.value;
+        payload.title = sellerOpt ? sellerOpt.textContent.replace(taskSellerSelect.value, '').trim() : '';
+      } else {
+        const targetText = taskTargetTextInput.value.trim();
+        if (!targetText) { showStatus(statusEl, '대상을 입력해주세요.', true); return; }
+        payload.targetText = targetText;
+      }
+
+      showStatus(statusEl, '추가 중...');
+      jsonpRequest(url, { action: 'addTask', data: JSON.stringify(payload) }, data => {
+        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
+        hideStatus(statusEl);
+        document.getElementById('taskMemoInput').value = '';
+        if (taskTargetMode === '직접입력') taskTargetTextInput.value = '';
+        loadTasks();
+      });
+    };
+
+    function taskTargetLine(t) {
+      if (t.대상유형 === '직접입력') {
+        return `<span class="task-item-target">${escapeHtml(t.대상텍스트)}</span>`;
+      }
+      let line = `<span class="task-item-target">${escapeHtml(t.은행)} ${escapeHtml(t.지점)}</span>`;
+      if (t.판매자명) line += ` · ${escapeHtml(t.판매자명)}${t.직책 ? ' ' + escapeHtml(t.직책) : ''}`;
+      return line;
+    }
+
+    function isAlarmDue(alarmStr) {
+      if (!alarmStr) return false;
+      const t = new Date(alarmStr).getTime();
+      return !isNaN(t) && t <= Date.now();
+    }
+
+    function renderTasks(tasks) {
+      const listEl = document.getElementById('taskList');
+      listEl.innerHTML = '';
+      if (!tasks.length) { listEl.innerHTML = '<div style="font-size:12.5px;color:var(--muted);text-align:center;padding:8px;">등록된 업무가 없습니다.</div>'; return; }
+      tasks.forEach((t, idx) => {
+        const div = document.createElement('div');
+        div.className = 'task-item' + (isAlarmDue(t.알람일시) ? ' alarm-due' : '');
+        const alarmLabel = t.알람일시 ? new Date(t.알람일시).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+        div.innerHTML = `
+          <div class="task-item-top">
+            <div class="task-item-body">
+              <div class="task-item-date">${escapeHtml(t.입력일)}</div>
+              <div>${taskTargetLine(t)}</div>
+              <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
+              ${alarmLabel ? `<div style="font-size:11px;color:var(--danger);margin-top:4px;">⏰ ${alarmLabel}</div>` : ''}
+            </div>
+            <div class="task-item-actions">
+              <button class="task-icon-btn task-up-btn" title="위로" ${idx === 0 ? 'disabled' : ''}>▲</button>
+              <button class="task-icon-btn task-alarm-btn" title="알람 설정">⏰</button>
+              <button class="task-icon-btn task-down-btn" title="아래로" ${idx === tasks.length - 1 ? 'disabled' : ''}>▼</button>
+            </div>
+          </div>
+          <div class="task-item-bottom">
+            <button class="task-complete-btn">처리완료</button>
+          </div>
+        `;
+        div.querySelector('.task-up-btn').onclick = () => moveTask(t.id, 'up');
+        div.querySelector('.task-down-btn').onclick = () => moveTask(t.id, 'down');
+        div.querySelector('.task-alarm-btn').onclick = () => openAlarmModal(t.id, t.알람일시);
+        div.querySelector('.task-complete-btn').onclick = () => completeTask(t.id);
+        listEl.appendChild(div);
+      });
+    }
+
+    function loadTasks() {
+      const url = getUrl();
+      if (!url) return;
+      jsonpRequest(url, { action: 'listTasks' }, data => {
+        if (data.error || !data.tasks) return;
+        renderTasks(data.tasks);
+      });
+    }
+
+    function completeTask(id) {
+      if (!confirm('해당 업무를 완료 하시겠습니까?')) return;
+      const url = getUrl();
+      jsonpRequest(url, { action: 'completeTask', id }, data => {
+        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
+        loadTasks();
+      });
+    }
+
+    function moveTask(id, direction) {
+      const url = getUrl();
+      jsonpRequest(url, { action: 'moveTask', id, direction }, data => {
+        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
+        loadTasks();
+      });
+    }
+
+    // ─── 알람 설정 팝업 ───────────────────────────────────────────────────────
+    let alarmTargetId = null;
+    const alarmModalOverlay = document.getElementById('alarmModalOverlay');
+    const alarmDateTimeInput = document.getElementById('alarmDateTimeInput');
+
+    function openAlarmModal(id, currentAlarm) {
+      alarmTargetId = id;
+      alarmDateTimeInput.value = currentAlarm ? currentAlarm.slice(0, 16) : '';
+      alarmModalOverlay.style.display = 'flex';
+    }
+    function closeAlarmModal() { alarmModalOverlay.style.display = 'none'; alarmTargetId = null; }
+
+    document.getElementById('alarmCancelBtn').onclick = closeAlarmModal;
+    document.getElementById('alarmSaveBtn').onclick = () => {
+      if (!alarmTargetId) return;
+      const url = getUrl();
+      const alarm = alarmDateTimeInput.value;
+      jsonpRequest(url, { action: 'setTaskAlarm', id: alarmTargetId, alarm }, data => {
+        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
+        closeAlarmModal();
+        loadTasks();
+      });
+    };
+    document.getElementById('alarmClearBtn').onclick = () => {
+      if (!alarmTargetId) return;
+      const url = getUrl();
+      jsonpRequest(url, { action: 'setTaskAlarm', id: alarmTargetId, alarm: '' }, data => {
+        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
+        closeAlarmModal();
+        loadTasks();
+      });
+    };
+
+    // ─── 완료된 업무 목록 (펼칠 때 1회 로드) ───────────────────────────────────
+    let completedTasksLoaded = false;
+    document.querySelector('.task-done-details').addEventListener('toggle', function () {
+      if (!this.open || completedTasksLoaded) return;
+      completedTasksLoaded = true;
+      const url = getUrl();
+      const container = document.getElementById('completedTaskList');
+      container.textContent = '불러오는 중...';
+      jsonpRequest(url, { action: 'listCompletedTasks' }, data => {
+        if (data.error || !data.tasks) { container.textContent = '오류: ' + (data.error || ''); return; }
+        if (!data.tasks.length) { container.textContent = '완료된 업무가 없습니다.'; return; }
+        container.innerHTML = data.tasks.map(t => `
+          <div class="task-done-item">
+            <div class="task-item-date">${escapeHtml(t.입력일)} → 완료 ${escapeHtml(t.처리일시)}</div>
+            <div>${taskTargetLine(t)}</div>
+            <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
+          </div>
+        `).join('');
+      });
+    });
+
+    loadTasks();
 
     function loadDashboard() {
       const url = getUrl();

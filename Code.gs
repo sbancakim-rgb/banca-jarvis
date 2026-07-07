@@ -5,6 +5,8 @@ var SHEET_PROPOSAL = '제안서요청';
 var SHEET_LOG = '방문로그';
 var SHEET_USERS = '사용자목록';
 var SHEET_DELETED = '삭제된 판매자';
+var SHEET_TASKS = '업무리스트';
+var SHEET_TASKS_DONE = '완료된업무';
 var DATA_SPREADSHEET_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4'; // 시스템 데이터 전용 스프레드시트("방카 활동의 기록 (시스템 데이터)")
 
 // 실제 데이터가 저장된 스프레드시트. 이 스크립트 파일 자체는 기존 "은행분석 및 방문정리" 파일에 묶여있지만,
@@ -56,6 +58,18 @@ function doGet(e) {
       result = handleFindArchivedSellers(e.parameter.bank || '', e.parameter.seller || '', e.parameter.title || '');
     } else if (action === 'getMe') {
       result = handleGetMe();
+    } else if (action === 'listTasks') {
+      result = handleListTasks();
+    } else if (action === 'addTask') {
+      result = handleAddTask(JSON.parse(e.parameter.data));
+    } else if (action === 'completeTask') {
+      result = handleCompleteTask(e.parameter.id || '');
+    } else if (action === 'moveTask') {
+      result = handleMoveTask(e.parameter.id || '', e.parameter.direction || '');
+    } else if (action === 'setTaskAlarm') {
+      result = handleSetTaskAlarm(e.parameter.id || '', e.parameter.alarm || '');
+    } else if (action === 'listCompletedTasks') {
+      result = handleListCompletedTasks();
     } else if (action === 'dashboard') {
       result = handleDashboard();
     } else if (action === 'dashboardBank') {
@@ -1010,6 +1024,161 @@ function handleGetMe() {
     }
   }
   return { ok: false, error: 'not_registered', email: email };
+}
+
+// === 업무 LIST ===
+// 컬럼: [id, 순서, 입력일, 대상유형(거래처/직접입력), 은행, 지점, 판매자명, 직책, 대상텍스트, 메모, 알람일시, 담당자이메일]
+function getTasksSheet() {
+  var ss = getSS();
+  var sheet = ss.getSheetByName(SHEET_TASKS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_TASKS);
+    sheet.appendRow(['id', '순서', '입력일', '대상유형', '은행', '지점', '판매자명', '직책', '대상텍스트', '메모', '알람일시', '담당자이메일']);
+  }
+  return sheet;
+}
+
+function getTasksDoneSheet() {
+  var ss = getSS();
+  var sheet = ss.getSheetByName(SHEET_TASKS_DONE);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_TASKS_DONE);
+    sheet.appendRow(['id', '입력일', '대상유형', '은행', '지점', '판매자명', '직책', '대상텍스트', '메모', '알람일시', '담당자이메일', '처리일시']);
+  }
+  return sheet;
+}
+
+function taskRowToObj(r) {
+  return {
+    id: String(r[0] || ''), 순서: Number(r[1]) || 0, 입력일: String(r[2] || ''),
+    대상유형: String(r[3] || ''), 은행: String(r[4] || ''), 지점: String(r[5] || ''),
+    판매자명: String(r[6] || ''), 직책: String(r[7] || ''), 대상텍스트: String(r[8] || ''),
+    메모: String(r[9] || ''), 알람일시: String(r[10] || ''), 담당자이메일: String(r[11] || '')
+  };
+}
+
+// 내 업무 목록(우선순위 순)
+function handleListTasks() {
+  var email = getCurrentUserEmail().toLowerCase();
+  var sheet = getTasksSheet();
+  var rows = sheet.getDataRange().getValues();
+  var tasks = [];
+  for (var i = 1; i < rows.length; i++) {
+    var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    if (!rows[i][0]) continue;
+    tasks.push(taskRowToObj(rows[i]));
+  }
+  tasks.sort(function (a, b) { return a.순서 - b.순서; });
+  return { ok: true, tasks: tasks };
+}
+
+// 새 업무 추가
+function handleAddTask(data) {
+  var email = getCurrentUserEmail();
+  var sheet = getTasksSheet();
+  var rows = sheet.getDataRange().getValues();
+  var maxOrder = 0;
+  for (var i = 1; i < rows.length; i++) {
+    var o = Number(rows[i][1]) || 0;
+    if (o > maxOrder) maxOrder = o;
+  }
+  var id = Utilities.getUuid();
+  var todayLabel = resolveDateLabel('');
+  var targetType = String(data.targetType || '거래처') === '직접입력' ? '직접입력' : '거래처';
+  sheet.appendRow([
+    id, maxOrder + 1, todayLabel, targetType,
+    targetType === '거래처' ? String(data.bank || '').trim() : '',
+    targetType === '거래처' ? String(data.branch || '').trim() : '',
+    targetType === '거래처' ? String(data.seller || '').trim() : '',
+    targetType === '거래처' ? String(data.title || '').trim() : '',
+    targetType === '직접입력' ? String(data.targetText || '').trim() : '',
+    String(data.memo || '').trim(),
+    String(data.alarm || '').trim(),
+    email
+  ]);
+  return { ok: true, id: id };
+}
+
+// 업무 완료 처리: 완료된업무로 이동
+function handleCompleteTask(id) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var sheet = getTasksSheet();
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === id) {
+      var r = rows[i];
+      var doneSheet = getTasksDoneSheet();
+      var doneAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+      doneSheet.appendRow([r[0], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], doneAt]);
+      sheet.deleteRow(i + 1);
+      return { ok: true };
+    }
+  }
+  return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
+}
+
+// 업무 우선순위 위/아래 이동: 같은 사용자 목록 내에서 인접한 항목과 순서값을 교체
+function handleMoveTask(id, direction) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var email = getCurrentUserEmail().toLowerCase();
+  var sheet = getTasksSheet();
+  var rows = sheet.getDataRange().getValues();
+
+  var mine = []; // { rowNum, id, order }
+  for (var i = 1; i < rows.length; i++) {
+    var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    if (!rows[i][0]) continue;
+    mine.push({ rowNum: i + 1, id: String(rows[i][0]), order: Number(rows[i][1]) || 0 });
+  }
+  mine.sort(function (a, b) { return a.order - b.order; });
+
+  var idx = mine.findIndex(function (t) { return t.id === id; });
+  if (idx === -1) return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
+  var swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= mine.length) return { ok: true }; // 이미 맨 위/아래
+
+  var a = mine[idx], b = mine[swapIdx];
+  sheet.getRange(a.rowNum, 2).setValue(b.order);
+  sheet.getRange(b.rowNum, 2).setValue(a.order);
+  return { ok: true };
+}
+
+// 알람 일시 설정/변경
+function handleSetTaskAlarm(id, alarm) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var sheet = getTasksSheet();
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === id) {
+      sheet.getRange(i + 1, 11).setValue(alarm || '');
+      return { ok: true };
+    }
+  }
+  return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
+}
+
+// 완료된 업무 목록(최근 처리 순)
+function handleListCompletedTasks() {
+  var email = getCurrentUserEmail().toLowerCase();
+  var sheet = getTasksDoneSheet();
+  var rows = sheet.getDataRange().getValues();
+  var tasks = [];
+  for (var i = 1; i < rows.length; i++) {
+    var rowEmail = String(rows[i][10] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    if (!rows[i][0]) continue;
+    tasks.push({
+      id: String(rows[i][0] || ''), 입력일: String(rows[i][1] || ''),
+      대상유형: String(rows[i][2] || ''), 은행: String(rows[i][3] || ''), 지점: String(rows[i][4] || ''),
+      판매자명: String(rows[i][5] || ''), 직책: String(rows[i][6] || ''), 대상텍스트: String(rows[i][7] || ''),
+      메모: String(rows[i][8] || ''), 알람일시: String(rows[i][9] || ''), 담당자이메일: String(rows[i][10] || ''),
+      처리일시: String(rows[i][11] || '')
+    });
+  }
+  tasks.sort(function (a, b) { return b.처리일시.localeCompare(a.처리일시); });
+  return { ok: true, tasks: tasks };
 }
 
 function callClaudeText(prompt) {
