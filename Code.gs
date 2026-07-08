@@ -11,8 +11,10 @@ var DATA_SPREADSHEET_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4'; // 시
 
 // 실제 데이터가 저장된 스프레드시트. 이 스크립트 파일 자체는 기존 "은행분석 및 방문정리" 파일에 묶여있지만,
 // 데이터는 별도 파일로 분리되어 있으므로 getActiveSpreadsheet() 대신 이 함수를 사용한다.
+var _cachedSS = null;
 function getSS() {
-  return SpreadsheetApp.openById(DATA_SPREADSHEET_ID);
+  if (!_cachedSS) _cachedSS = SpreadsheetApp.openById(DATA_SPREADSHEET_ID);
+  return _cachedSS;
 }
 
 function doGet(e) {
