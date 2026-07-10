@@ -48,6 +48,8 @@ function doGet(e) {
       result = handleSaveSellerFields(JSON.parse(e.parameter.data));
     } else if (action === 'calendarDay') {
       result = handleCalendarDay(e.parameter.date || '');
+    } else if (action === 'deleteVisitDay') {
+      result = handleDeleteVisitDay(e.parameter.date || '', e.parameter.bank || '', e.parameter.branch || '');
     } else if (action === 'listProposals') {
       result = handleListProposals();
     } else if (action === 'updateProposal') {
@@ -920,6 +922,34 @@ function handleCalendarDay(dateStr) {
     sellerCount: Object.keys(sellerSet).length,
     visits: visits
   };
+}
+
+// 활동달력에서 특정 날짜의 특정 지점 방문 기록을 전부 삭제 (해당 날짜+은행+지점에 해당하는 방문로그 행 전부 제거)
+function handleDeleteVisitDay(dateStr, bank, branch) {
+  if (!dateStr || !bank || !branch) return { ok: false, message: '필수 정보가 없습니다.' };
+  var email = getCurrentUserEmail().toLowerCase();
+  var normBank = normalizeText(bank);
+  var normBranch = normalizeText(branch);
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
+  var rows = logSheet.getDataRange().getValues();
+
+  var rowNumsToDelete = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[0] || '').indexOf(dateStr) !== 0) continue;
+    if (normalizeText(String(r[1] || '')) !== normBank) continue;
+    if (normalizeText(String(r[2] || '')) !== normBranch) continue;
+    var rowEmail = String(r[5] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    rowNumsToDelete.push(i + 1);
+  }
+  if (rowNumsToDelete.length === 0) return { ok: false, message: '삭제할 방문 기록을 찾을 수 없습니다.' };
+
+  // 뒤에서부터 삭제해야 행 번호가 밀리지 않음
+  rowNumsToDelete.sort(function (a, b) { return b - a; });
+  rowNumsToDelete.forEach(function (rowNum) { logSheet.deleteRow(rowNum); });
+
+  return { ok: true, deleted: rowNumsToDelete.length };
 }
 
 // 은행별: 모수(영업대상 지점수) / 당월 방문 지점수 / 미방문 지점수
