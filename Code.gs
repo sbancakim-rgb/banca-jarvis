@@ -28,6 +28,20 @@ function fillCheckboxesK308() {
   return 'K308:K' + lastRow + ' 체크박스 적용 완료';
 }
 
+// 일회성 유틸: 판매자정보 시트 K열(영업대상 체크박스) 308행부터 마지막행까지 TRUE로 채움.
+// 셀 크기/체크박스 서식은 건드리지 않고 값만 TRUE로 설정.
+function checkAllK308() {
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 308) return '308행 이후 데이터가 없습니다. lastRow=' + lastRow;
+  var numRows = lastRow - 308 + 1;
+  var range = sheet.getRange(308, 11, numRows, 1); // K열 = 11번째 열
+  var values = [];
+  for (var i = 0; i < numRows; i++) values.push([true]);
+  range.setValues(values);
+  return 'K308:K' + lastRow + ' 전부 TRUE로 체크 완료';
+}
+
 function doGet(e) {
   var action = e.parameter.action;
   var text = e.parameter.text || '';
