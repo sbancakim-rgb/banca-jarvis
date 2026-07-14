@@ -46,6 +46,9 @@ function doGet(e) {
   var action = e.parameter.action;
   var text = e.parameter.text || '';
   var callback = e.parameter.callback;
+  // 웹앱이 배포자(USER_DEPLOYING) 권한으로 실행되므로 Session.getActiveUser()로는
+  // 접속자 본인을 식별할 수 없다. 프론트가 넘긴 userEmail을 요청 단위로 저장해 사용한다.
+  _requestUserEmail = String(e.parameter.userEmail || '').trim();
 
   var result;
   try {
@@ -85,6 +88,8 @@ function doGet(e) {
       result = handleUpdateSellerName(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '', e.parameter.newName || '');
     } else if (action === 'findArchivedSellers') {
       result = handleFindArchivedSellers(e.parameter.bank || '', e.parameter.seller || '', e.parameter.title || '');
+    } else if (action === 'listUsers') {
+      result = handleListUsers();
     } else if (action === 'getMe') {
       result = handleGetMe();
     } else if (action === 'listTasks') {
@@ -1126,8 +1131,27 @@ function getClaudeApiKey() {
   return key;
 }
 
+// 요청 단위로 프론트가 넘긴 접속자 이메일 (doGet에서 설정)
+var _requestUserEmail = '';
+
 function getCurrentUserEmail() {
+  // 프론트가 넘긴 이메일을 우선 사용하고, 없으면 세션 계정(단독/소유자 접속용)으로 폴백
+  if (_requestUserEmail) return _requestUserEmail;
   return Session.getActiveUser().getEmail() || '';
+}
+
+// 첫 접속 시 사용자가 본인 이름을 고를 수 있도록 등록된 사용자 목록을 반환
+function handleListUsers() {
+  var usersSheet = getSS().getSheetByName(SHEET_USERS);
+  if (!usersSheet) return { ok: false, error: 'no_users_sheet' };
+  var rows = usersSheet.getDataRange().getValues();
+  var users = [];
+  for (var i = 1; i < rows.length; i++) {
+    var name = String(rows[i][0] || '').trim();
+    var email = String(rows[i][1] || '').trim();
+    if (email) users.push({ name: name, email: email });
+  }
+  return { ok: true, users: users };
 }
 
 function handleGetMe() {

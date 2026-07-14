@@ -263,6 +263,19 @@
   <!-- 로그인 오류 배너 -->
   <div id="loginError" style="display:none;background:#dc2626;color:#fff;text-align:center;padding:12px 16px;font-size:14px;"></div>
 
+  <!-- 사용자 선택 오버레이 (첫 접속 시) -->
+  <div id="userPickerOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+    <div style="background:var(--card,#fff);border-radius:14px;max-width:360px;width:100%;padding:22px 20px;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+      <div style="font-size:17px;font-weight:700;margin-bottom:6px;">사용자 선택</div>
+      <div style="font-size:13px;color:var(--muted,#666);margin-bottom:16px;">본인 이름을 선택하세요. 이 기기에 저장되어 다음부터는 자동으로 로그인됩니다.</div>
+      <select id="userPickerSelect" style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border,#ccc);border-radius:8px;margin-bottom:14px;background:var(--card,#fff);color:var(--text,#111);">
+        <option value="">— 이름 선택 —</option>
+      </select>
+      <button id="userPickerConfirm" class="btn-primary" style="width:100%;">확인</button>
+      <div id="userPickerMsg" style="font-size:12px;color:var(--danger,#dc2626);margin-top:10px;text-align:center;"></div>
+    </div>
+  </div>
+
   <div class="container">
 
     <!-- ① 방문 지점 입력 -->
@@ -473,19 +486,55 @@
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
     function getUrl() { return urlInput.value.trim() || HARDCODED_URL; }
 
-    // ─── Google 계정 인증 ─────────────────────────────────────────────────────
+    // ─── 사용자 식별 (기기 저장 방식) ────────────────────────────────────────
+    // 웹앱이 배포자 권한으로 실행되어 Google 계정 자동인식이 불가능하므로,
+    // 첫 접속 시 등록된 사용자 중 본인을 선택 → 이메일을 기기에 저장 → 모든 요청에 실어보냄.
+    function getStoredEmail() { return (localStorage.getItem('bancaUserEmail') || '').trim(); }
+    function setStoredEmail(v) { localStorage.setItem('bancaUserEmail', v); }
+    function clearStoredEmail() { localStorage.removeItem('bancaUserEmail'); }
+
     function initUser() {
+      if (!getStoredEmail()) { showUserPicker(); return; }
       jsonpRequest(getUrl(), { action: 'getMe' }, data => {
         if (data.ok) {
           document.getElementById('userBadge').textContent = data.name + ' 님';
-        } else if (data.error === 'login_required') {
-          showLoginError('Google 계정으로 로그인이 필요합니다.');
         } else if (data.error === 'not_registered') {
-          showLoginError('등록되지 않은 계정입니다 (' + (data.email || '') + '). 관리자에게 문의하세요.');
+          // 저장된 이메일이 더 이상 등록돼있지 않음 → 다시 선택
+          clearStoredEmail();
+          showUserPicker('등록되지 않은 계정입니다 (' + (data.email || '') + '). 다시 선택하세요.');
+        } else if (data.error === 'login_required') {
+          clearStoredEmail();
+          showUserPicker();
         } else if (data.error === 'no_users_sheet') {
           // 사용자목록 시트 없음 = 아직 다중사용자 설정 전. 오류 없이 진행.
         }
       });
+    }
+
+    function showUserPicker(msg) {
+      const overlay = document.getElementById('userPickerOverlay');
+      const select = document.getElementById('userPickerSelect');
+      const msgEl = document.getElementById('userPickerMsg');
+      msgEl.textContent = msg || '';
+      overlay.style.display = 'flex';
+      jsonpRequest(getUrl(), { action: 'listUsers' }, data => {
+        if (data.ok && data.users) {
+          select.innerHTML = '<option value="">— 이름 선택 —</option>' +
+            data.users.map(u => '<option value="' + escapeHtml(u.email) + '">' +
+              escapeHtml(u.name || u.email) + '</option>').join('');
+        } else if (data.error === 'no_users_sheet') {
+          overlay.style.display = 'none'; // 다중사용자 미설정 환경은 그냥 통과
+        } else {
+          msgEl.textContent = '사용자 목록을 불러오지 못했습니다.';
+        }
+      });
+      document.getElementById('userPickerConfirm').onclick = () => {
+        const email = select.value.trim();
+        if (!email) { msgEl.textContent = '이름을 선택하세요.'; return; }
+        setStoredEmail(email);
+        overlay.style.display = 'none';
+        initUser();
+      };
     }
     function showLoginError(msg) {
       const el = document.getElementById('loginError');
@@ -515,7 +564,10 @@
       const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과' }); }, 20000);
       function cleanup() { clearTimeout(timeout); delete window[cbName]; if (script.parentNode) script.remove(); }
       window[cbName] = data => { cleanup(); onData(data); };
-      const qs = new URLSearchParams({ ...params, callback: cbName }).toString();
+      // 저장된 접속자 이메일을 모든 요청에 자동 첨부 (백엔드 사용자 식별용)
+      const storedEmail = (localStorage.getItem('bancaUserEmail') || '').trim();
+      const withUser = storedEmail ? { ...params, userEmail: storedEmail } : { ...params };
+      const qs = new URLSearchParams({ ...withUser, callback: cbName }).toString();
       const script = document.createElement('script');
       script.src = baseUrl + (baseUrl.includes('?') ? '&' : '?') + qs;
       script.onerror = () => { cleanup(); onData({ error: '요청 실패 (URL을 확인하세요)' }); };
