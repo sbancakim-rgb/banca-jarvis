@@ -263,14 +263,16 @@
   <!-- 로그인 오류 배너 -->
   <div id="loginError" style="display:none;background:#dc2626;color:#fff;text-align:center;padding:12px 16px;font-size:14px;"></div>
 
-  <!-- 사용자 선택 오버레이 (첫 접속 시) -->
+  <!-- 사용자 로그인 오버레이 (첫 접속 시) -->
   <div id="userPickerOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;padding:20px;">
     <div style="background:var(--card,#fff);border-radius:14px;max-width:360px;width:100%;padding:22px 20px;box-shadow:0 10px 40px rgba(0,0,0,0.3);">
-      <div style="font-size:17px;font-weight:700;margin-bottom:6px;">사용자 선택</div>
-      <div style="font-size:13px;color:var(--muted,#666);margin-bottom:16px;">본인 이름을 선택하세요. 이 기기에 저장되어 다음부터는 자동으로 로그인됩니다.</div>
-      <select id="userPickerSelect" style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border,#ccc);border-radius:8px;margin-bottom:14px;background:var(--card,#fff);color:var(--text,#111);">
+      <div style="font-size:17px;font-weight:700;margin-bottom:6px;">로그인</div>
+      <div id="userPickerHint" style="font-size:13px;color:var(--muted,#666);margin-bottom:16px;">본인 이름을 선택하고 PIN을 입력하세요.</div>
+      <select id="userPickerSelect" style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border,#ccc);border-radius:8px;margin-bottom:10px;background:var(--card,#fff);color:var(--text,#111);">
         <option value="">— 이름 선택 —</option>
       </select>
+      <input id="userPickerPin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN (숫자 4자리 이상)"
+        style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border,#ccc);border-radius:8px;margin-bottom:14px;background:var(--card,#fff);color:var(--text,#111);" />
       <button id="userPickerConfirm" class="btn-primary" style="width:100%;">확인</button>
       <div id="userPickerMsg" style="font-size:12px;color:var(--danger,#dc2626);margin-top:10px;text-align:center;"></div>
     </div>
@@ -486,27 +488,29 @@
     urlInput.addEventListener('change', () => localStorage.setItem('webAppUrl', urlInput.value));
     function getUrl() { return urlInput.value.trim() || HARDCODED_URL; }
 
-    // ─── 사용자 식별 (기기 저장 방식) ────────────────────────────────────────
+    // ─── 사용자 인증 (PIN + 서명 토큰) ───────────────────────────────────────
     // 웹앱이 배포자 권한으로 실행되어 Google 계정 자동인식이 불가능하므로,
-    // 첫 접속 시 등록된 사용자 중 본인을 선택 → 이메일을 기기에 저장 → 모든 요청에 실어보냄.
-    function getStoredEmail() { return (localStorage.getItem('bancaUserEmail') || '').trim(); }
-    function setStoredEmail(v) { localStorage.setItem('bancaUserEmail', v); }
-    function clearStoredEmail() { localStorage.removeItem('bancaUserEmail'); }
+    // 첫 접속 시 본인 이름 선택 + PIN 입력 → 서버가 서명 토큰 발급 → 기기에 저장 →
+    // 모든 요청에 토큰을 실어보냄. 백엔드가 토큰을 검증해 신원을 확정한다.
+    function getStoredToken() { return (localStorage.getItem('bancaAuthToken') || '').trim(); }
+    function setStoredToken(v) { localStorage.setItem('bancaAuthToken', v); }
+    function clearStoredToken() {
+      localStorage.removeItem('bancaAuthToken');
+      localStorage.removeItem('bancaUserEmail'); // 구버전 잔재 정리
+    }
 
     function initUser() {
-      if (!getStoredEmail()) { showUserPicker(); return; }
+      if (!getStoredToken()) { showUserPicker(); return; }
       jsonpRequest(getUrl(), { action: 'getMe' }, data => {
         if (data.ok) {
           document.getElementById('userBadge').textContent = data.name + ' 님';
-        } else if (data.error === 'not_registered') {
-          // 저장된 이메일이 더 이상 등록돼있지 않음 → 다시 선택
-          clearStoredEmail();
-          showUserPicker('등록되지 않은 계정입니다 (' + (data.email || '') + '). 다시 선택하세요.');
-        } else if (data.error === 'login_required') {
-          clearStoredEmail();
-          showUserPicker();
         } else if (data.error === 'no_users_sheet') {
           // 사용자목록 시트 없음 = 아직 다중사용자 설정 전. 오류 없이 진행.
+        } else {
+          // 토큰 만료/무효/미등록 → 다시 로그인
+          clearStoredToken();
+          showUserPicker(data.error === 'not_registered'
+            ? '등록되지 않은 계정입니다. 다시 로그인하세요.' : '다시 로그인해주세요.');
         }
       });
     }
@@ -514,6 +518,8 @@
     function showUserPicker(msg) {
       const overlay = document.getElementById('userPickerOverlay');
       const select = document.getElementById('userPickerSelect');
+      const pinInput = document.getElementById('userPickerPin');
+      const hintEl = document.getElementById('userPickerHint');
       const msgEl = document.getElementById('userPickerMsg');
       msgEl.textContent = msg || '';
       overlay.style.display = 'flex';
@@ -528,13 +534,39 @@
           msgEl.textContent = '사용자 목록을 불러오지 못했습니다.';
         }
       });
-      document.getElementById('userPickerConfirm').onclick = () => {
+      function doLogin() {
         const email = select.value.trim();
+        const pin = pinInput.value.trim();
         if (!email) { msgEl.textContent = '이름을 선택하세요.'; return; }
-        setStoredEmail(email);
-        overlay.style.display = 'none';
-        initUser();
-      };
+        if (!pin) { msgEl.textContent = 'PIN을 입력하세요.'; return; }
+        msgEl.style.color = 'var(--muted,#666)';
+        msgEl.textContent = '확인 중...';
+        jsonpRequest(getUrl(), { action: 'login', email: email, pin: pin }, res => {
+          msgEl.style.color = 'var(--danger,#dc2626)';
+          if (res.ok) {
+            setStoredToken(res.token);
+            pinInput.value = '';
+            overlay.style.display = 'none';
+            if (res.firstTime) {
+              alert('PIN이 설정되었습니다. 다음부터는 이 PIN으로 로그인하세요.');
+            }
+            initUser();
+          } else if (res.error === 'wrong_pin') {
+            msgEl.textContent = 'PIN이 올바르지 않습니다.';
+          } else if (res.error === 'set_pin') {
+            hintEl.textContent = '최초 로그인입니다. 사용할 PIN(숫자 4자리 이상)을 정해 입력하세요.';
+            msgEl.textContent = 'PIN을 입력해 설정하세요.';
+          } else if (res.error === 'pin_too_short') {
+            msgEl.textContent = 'PIN은 숫자 4자리 이상이어야 합니다.';
+          } else if (res.error === 'not_registered') {
+            msgEl.textContent = '등록되지 않은 계정입니다. 관리자에게 문의하세요.';
+          } else {
+            msgEl.textContent = '로그인에 실패했습니다. 다시 시도하세요.';
+          }
+        });
+      }
+      document.getElementById('userPickerConfirm').onclick = doLogin;
+      pinInput.onkeydown = e => { if (e.key === 'Enter') doLogin(); };
     }
     function showLoginError(msg) {
       const el = document.getElementById('loginError');
@@ -564,10 +596,10 @@
       const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과' }); }, 20000);
       function cleanup() { clearTimeout(timeout); delete window[cbName]; if (script.parentNode) script.remove(); }
       window[cbName] = data => { cleanup(); onData(data); };
-      // 저장된 접속자 이메일을 모든 요청에 자동 첨부 (백엔드 사용자 식별용)
-      const storedEmail = (localStorage.getItem('bancaUserEmail') || '').trim();
-      const withUser = storedEmail ? { ...params, userEmail: storedEmail } : { ...params };
-      const qs = new URLSearchParams({ ...withUser, callback: cbName }).toString();
+      // 저장된 서명 토큰을 모든 요청에 자동 첨부 (백엔드가 검증해 신원 확정)
+      const storedToken = (localStorage.getItem('bancaAuthToken') || '').trim();
+      const withAuth = storedToken ? { ...params, token: storedToken } : { ...params };
+      const qs = new URLSearchParams({ ...withAuth, callback: cbName }).toString();
       const script = document.createElement('script');
       script.src = baseUrl + (baseUrl.includes('?') ? '&' : '?') + qs;
       script.onerror = () => { cleanup(); onData({ error: '요청 실패 (URL을 확인하세요)' }); };

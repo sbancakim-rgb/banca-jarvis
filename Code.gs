@@ -47,8 +47,9 @@ function doGet(e) {
   var text = e.parameter.text || '';
   var callback = e.parameter.callback;
   // 웹앱이 배포자(USER_DEPLOYING) 권한으로 실행되므로 Session.getActiveUser()로는
-  // 접속자 본인을 식별할 수 없다. 프론트가 넘긴 userEmail을 요청 단위로 저장해 사용한다.
-  _requestUserEmail = String(e.parameter.userEmail || '').trim();
+  // 접속자 본인을 식별할 수 없다. 로그인 시 발급한 서명 토큰을 검증해 신원을 확정한다.
+  // (이메일 파라미터를 직접 신뢰하지 않으므로 위조로 남의 계정 접근 불가)
+  _requestUserEmail = verifyToken(e.parameter.token || '');
 
   var result;
   try {
@@ -90,6 +91,8 @@ function doGet(e) {
       result = handleFindArchivedSellers(e.parameter.bank || '', e.parameter.seller || '', e.parameter.title || '');
     } else if (action === 'listUsers') {
       result = handleListUsers();
+    } else if (action === 'login') {
+      result = handleLogin(e.parameter.email || '', e.parameter.pin || '');
     } else if (action === 'getMe') {
       result = handleGetMe();
     } else if (action === 'listTasks') {
@@ -1131,13 +1134,70 @@ function getClaudeApiKey() {
   return key;
 }
 
-// 요청 단위로 프론트가 넘긴 접속자 이메일 (doGet에서 설정)
+// 요청 단위로 검증된 접속자 이메일 (doGet에서 토큰 검증 후 설정)
 var _requestUserEmail = '';
 
 function getCurrentUserEmail() {
-  // 프론트가 넘긴 이메일을 우선 사용하고, 없으면 세션 계정(단독/소유자 접속용)으로 폴백
+  // 서명 토큰으로 검증된 이메일을 우선 사용하고, 없으면 세션 계정(소유자 직접 접속용)으로 폴백
   if (_requestUserEmail) return _requestUserEmail;
   return Session.getActiveUser().getEmail() || '';
+}
+
+// === 로그인/토큰 (PIN 기반) ==================================================
+// 서명 비밀키는 소스코드(GitHub)에 두지 않고 Script Properties에 자동 생성·보관한다.
+function getAuthSecret() {
+  var props = PropertiesService.getScriptProperties();
+  var s = props.getProperty('AUTH_SECRET');
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('AUTH_SECRET', s); }
+  return s;
+}
+
+function makeToken(email) {
+  email = String(email || '').trim().toLowerCase();
+  var sig = Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(email, getAuthSecret()));
+  return email + '|' + sig;
+}
+
+function verifyToken(token) {
+  token = String(token || '');
+  var i = token.lastIndexOf('|');
+  if (i < 0) return '';
+  var email = token.substring(0, i);
+  var sig = token.substring(i + 1);
+  return sig === makeToken(email).split('|')[1] ? email : '';
+}
+
+// 사용자목록 시트에서 이메일로 행을 찾음 (0-based row index 반환, 못 찾으면 -1)
+function _findUserRowByEmail(rows, email) {
+  email = String(email || '').trim().toLowerCase();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || '').trim().toLowerCase() === email) return i;
+  }
+  return -1;
+}
+
+// 로그인: 이메일 + PIN 검증. PIN 미설정 사용자는 이번에 입력한 PIN으로 최초 등록.
+// 사용자목록 시트 컬럼: A=이름, B=이메일, C=PIN
+function handleLogin(email, pin) {
+  email = String(email || '').trim();
+  pin = String(pin || '').trim();
+  var usersSheet = getSS().getSheetByName(SHEET_USERS);
+  if (!usersSheet) return { ok: false, error: 'no_users_sheet' };
+  var rows = usersSheet.getDataRange().getValues();
+  var idx = _findUserRowByEmail(rows, email);
+  if (idx < 0) return { ok: false, error: 'not_registered' };
+  var name = String(rows[idx][0] || '').trim();
+  var savedPin = String(rows[idx][2] || '').trim();
+  if (!savedPin) {
+    // 최초 로그인: PIN 설정 단계
+    if (!pin) return { ok: false, error: 'set_pin', name: name };
+    if (pin.length < 4) return { ok: false, error: 'pin_too_short', name: name };
+    usersSheet.getRange(idx + 1, 3).setValue("'" + pin); // 앞자리 0 보존 위해 텍스트로 저장
+    return { ok: true, name: name, email: email, token: makeToken(email), firstTime: true };
+  }
+  if (pin !== savedPin) return { ok: false, error: 'wrong_pin', name: name };
+  return { ok: true, name: name, email: email, token: makeToken(email) };
 }
 
 // 첫 접속 시 사용자가 본인 이름을 고를 수 있도록 등록된 사용자 목록을 반환
