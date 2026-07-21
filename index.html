@@ -644,16 +644,18 @@
     let branchListData = [];
 
     function makePicker(bankSel, branchSel, sellerSel, sellerPlaceholder, onSellerChange) {
-      function updateSellers() {
-        if (!sellerSel) return;
+      function updateSellers(done) {
+        if (!sellerSel) { if (done) done(); return; }
         const bank = bankSel.value, branch = branchSel.value;
         sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>`;
         const url = getUrl();
-        if (!bank || !branch || !url) return;
+        if (!bank || !branch || !url) { if (done) done(); return; }
         jsonpRequest(url, { action: 'listSellers', bank, branch }, data => {
-          if (data.error || !data.sellers) return;
-          sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>` +
-            data.sellers.map(s => `<option value="${escapeHtml(s.판매자명)}">${escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))}</option>`).join('');
+          if (!data.error && data.sellers) {
+            sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>` +
+              data.sellers.map(s => `<option value="${escapeHtml(s.판매자명)}">${escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))}</option>`).join('');
+          }
+          if (done) done();
         });
       }
       function updateBranches() {
@@ -674,7 +676,13 @@
           updateBranches();
         },
         setBank(val) { bankSel.value = val; updateBranches(); },
-        setBranch(val) { branchSel.value = val; updateSellers(); }
+        setBranch(val, done) { branchSel.value = val; updateSellers(done); },
+        // 드롭다운에서 특정 판매자를 선택하고 선택 핸들러를 실행
+        selectSeller(name) {
+          if (!sellerSel) return;
+          sellerSel.value = name;
+          if (sellerSel.value === name && onSellerChange) onSellerChange();
+        }
       };
     }
 
@@ -856,16 +864,17 @@
 
     function checkArchive(bank, seller, title) {
       const url = getUrl();
-      if (!url || !bank || !seller || !title) return;
-      jsonpRequest(url, { action: 'findArchivedSellers', bank, seller, title }, data => {
+      if (!url || !bank || !seller) return;   // 은행+이름만 있으면 조회 (직책은 선택)
+      jsonpRequest(url, { action: 'findArchivedSellers', bank, seller, title: title || '' }, data => {
         if (!data.ok || !data.candidates || data.candidates.length === 0) return;
         const box = document.getElementById('archiveRestoreBox');
         const msg = document.getElementById('archiveRestoreMsg');
         const list = document.getElementById('archiveCandidateList');
+        const label = c => `${c.지점명 || '지점 미상'}${c.직책 ? ' · ' + c.직책 : ''} · ${c.날짜 || '날짜 미상'}${c.source === '현재' ? ' (현재 담당자 보유)' : ''}`;
         list.innerHTML = '';
         if (data.candidates.length === 1) {
           const c = data.candidates[0];
-          msg.textContent = `이전 담당자(${c.지점명 || '구 지점'} 근무) 정보가 있습니다. 가져올까요?`;
+          msg.textContent = `은행·이름이 같은 판매자 정보가 있습니다 (${label(c)}). 가져올까요?`;
           const btn = document.createElement('button');
           btn.className = 'btn-primary';
           btn.style.cssText = 'width:auto;padding:8px 16px;font-size:13px;';
@@ -873,13 +882,13 @@
           btn.onclick = () => applyArchivedData(c);
           list.appendChild(btn);
         } else {
-          msg.textContent = `이름·직책이 같은 이전 담당자 정보가 ${data.candidates.length}건 있습니다. 가져올 정보를 선택하세요:`;
+          msg.textContent = `은행·이름이 같은 판매자 정보가 ${data.candidates.length}건 있습니다. 가져올 정보를 선택하세요:`;
           data.candidates.forEach((c, i) => {
             const row = document.createElement('div');
             row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;';
             const info = document.createElement('span');
             info.style.cssText = 'flex:1;font-size:12px;color:var(--text);';
-            info.textContent = `${i+1}. ${c.지점명 || '지점 미상'} · ${c.날짜 || '날짜 미상'}`;
+            info.textContent = `${i+1}. ${label(c)}`;
             const btn = document.createElement('button');
             btn.className = 'btn-primary';
             btn.style.cssText = 'width:auto;padding:6px 12px;font-size:12px;';
@@ -974,7 +983,9 @@
         showStatus(statusEl, '✓ 추가 완료');
         document.getElementById('newSellerNameInput').value = '';
         document.getElementById('newSellerTitleInput').value = '';
-        sellerPicker.setBranch(branch); // 판매자 드롭다운 새로고침
+        // 드롭다운 새로고침 후 방금 추가한 판매자를 자동 선택 →
+        // onSellerSelected → checkArchive(은행+이름)가 실행되어 기존/삭제된 정보가 있으면 배너로 물어봄
+        sellerPicker.setBranch(branch, () => sellerPicker.selectSeller(sellerName));
       });
     };
 

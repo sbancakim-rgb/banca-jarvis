@@ -406,12 +406,11 @@ function handleCommit(data) {
 
     var userEmail = getCurrentUserEmail();
     if (matchRowIndex === -1) {
-      sheet.appendRow([
+      insertSellerIntoGroup(sheet, rows, bank, resolvedBranch, [
         todayLabel, bank, resolvedBranch, entry['판매자명'], entry['직책'],
         trivial ? '' : entry['가족관계'], trivial ? '' : entry['자택'], trivial ? '' : entry['판매성향'],
         trivial ? '' : entry['방문이력'], trivial ? '' : entry['기타대화내용'], '', userEmail
       ]);
-      sheet.getRange(sheet.getLastRow(), 1, 1, 12).setWrap(true);
     } else {
       var rowNum = matchRowIndex + 1; // 시트는 1-based
       var existing = rows[matchRowIndex];
@@ -758,6 +757,42 @@ function handleUpdateSellerName(bank, branch, seller, newName) {
   return { ok: true, oldName: String(seller).trim(), newName: newNameTrimmed };
 }
 
+// 새 판매자 1명을 해당 지점(지점) 그룹 "안"에 삽입한다.
+// A(날짜)/B(은행)/C(지점) 세로 병합이 있으면 그룹 앵커 바로 아래에 행을 끼워 넣어
+// 구글시트가 병합을 자동 확장하도록 한다(맨 아래 append로 그룹과 분리되는 문제 방지).
+// 그룹이 없으면(새 지점) 기존처럼 맨 아래에 append 한다.
+// rowValues: 12칸 [날짜,은행,지점,이름,직책,가족관계,자택,판매성향,방문이력,기타대화내용,영업대상,담당자이메일]
+// 반환: 삽입된 시트 행번호(1-based)
+function insertSellerIntoGroup(sheet, rows, bank, branch, rowValues) {
+  var resolvedBranch = resolveBranchName(rows, bank, branch);
+  var group = findMatchingGroup(rows, bank, resolvedBranch);
+  if (group.length === 0) {
+    sheet.appendRow(rowValues);
+    var r = sheet.getLastRow();
+    sheet.getRange(r, 1, 1, 12).setWrap(true);
+    return r;
+  }
+  // 지점 블록 앵커(top1) = 그룹 첫 행의 C(지점) 병합 최상단
+  var top1 = group[0] + 1;
+  var cMerges = sheet.getRange(top1, 3).getMergedRanges();
+  if (cMerges.length > 0) top1 = cMerges[0].getRow();
+
+  sheet.insertRowAfter(top1);       // 앵커 바로 아래(병합 범위 내부)에 삽입 → 병합 자동 확장
+  var newRow1 = top1 + 1;
+
+  // A/B/C: 병합에 자동 포함되면 비워두고(위 값이 이어짐), 병합이 없으면 앵커 값 복사
+  for (var c = 1; c <= 3; c++) {
+    if (sheet.getRange(newRow1, c).getMergedRanges().length === 0) {
+      sheet.getRange(newRow1, c).setValue(sheet.getRange(top1, c).getValue());
+    }
+  }
+  // D~J(이름/직책/각 필드) + L(이메일) 기록. K(영업대상 체크박스)는 위 행 서식이 복사되므로 건드리지 않음.
+  sheet.getRange(newRow1, 4, 1, 7).setValues([rowValues.slice(3, 10)]); // D..J
+  sheet.getRange(newRow1, 12).setValue(rowValues[11]);                  // L 이메일
+  sheet.getRange(newRow1, 1, 1, 12).setWrap(true);
+  return newRow1;
+}
+
 // 지점 내 판매자 수 증가: 다른 필드/판매자를 건드리지 않고 새 행 1개만 추가
 function handleAddNewSeller(bank, branch, sellerName, title) {
   bank = String(bank || '').trim();
@@ -781,8 +816,8 @@ function handleAddNewSeller(bank, branch, sellerName, title) {
   }
 
   var todayLabel = resolveDateLabel('');
-  sheet.appendRow([todayLabel, bank, resolvedBranch, sellerName, title, '', '', '', '', '', '', email]);
-  sheet.getRange(sheet.getLastRow(), 1, 1, 12).setWrap(true);
+  insertSellerIntoGroup(sheet, rows, bank, resolvedBranch,
+    [todayLabel, bank, resolvedBranch, sellerName, title, '', '', '', '', '', '', email]);
   return { ok: true };
 }
 
@@ -807,17 +842,42 @@ function handleDeleteSeller(bank, branch, seller) {
   delSheet.appendRow(oldRow.slice(0, 12).concat([Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd')]));
   delSheet.getRange(delSheet.getLastRow(), 1, 1, 13).setWrap(true);
 
-  sheet.deleteRow(rowIdx + 1);
+  deleteRowPreservingMerges(sheet, rowIdx + 1);
   return { ok: true };
 }
 
-// 이전 담당자 정보 찾기: 은행+이름+직책 기준으로 삭제된 판매자 시트 및 다른 사용자의 판매자정보를 탐색
-// 1건이면 자동 복원용, 2건 이상이면 후보 목록 반환
+// 병합-인지형 행 삭제: 지우려는 행이 A(날짜)/B(은행)/C(지점) 병합의 "맨 위(앵커)"이면
+// 병합 값이 그 행에만 있어 삭제 시 사라진다. 값을 아래 행으로 옮기고 병합을 한 칸 줄여 재병합한다.
+// (앵커가 아니면 구글시트가 자동으로 병합을 축소하고 값을 보존하므로 손대지 않는다.)
+function deleteRowPreservingMerges(sheet, rowNum) {
+  var relocations = [];
+  for (var c = 1; c <= 3; c++) {
+    var merged = sheet.getRange(rowNum, c).getMergedRanges();
+    if (merged.length > 0) {
+      var mr = merged[0];
+      var n = mr.getNumRows();
+      if (mr.getRow() === rowNum && n > 1) {
+        var val = mr.getValue();
+        mr.breakApart();
+        sheet.getRange(rowNum + 1, c).setValue(val); // 삭제 후 새 앵커가 될 아래 행으로 값 이전
+        relocations.push({ col: c, count: n - 1 });
+      }
+    }
+  }
+  sheet.deleteRow(rowNum);
+  for (var k = 0; k < relocations.length; k++) {
+    if (relocations[k].count >= 2) {
+      sheet.getRange(rowNum, relocations[k].col, relocations[k].count, 1).merge();
+    }
+  }
+}
+
+// 이전 담당자 정보 찾기: 은행+이름 기준으로 삭제된 판매자 시트 및 다른 사용자의 판매자정보를 탐색
+// (직책은 매칭 조건이 아니라 후보 구분 표시용) 1건이면 자동 복원용, 2건 이상이면 후보 목록 반환
 function handleFindArchivedSellers(bank, sellerName, title) {
-  if (!bank || !sellerName || !title) return { ok: true, candidates: [] };
+  if (!bank || !sellerName) return { ok: true, candidates: [] };
   var normBank = normalizeText(bank);
   var normName = normalizeText(sellerName);
-  var normTitle = normalizeText(title);
   var myEmail = getCurrentUserEmail().toLowerCase();
   var ss = getSS();
   var candidates = [];
@@ -845,7 +905,6 @@ function handleFindArchivedSellers(bank, sellerName, title) {
       var r = delRows[i];
       if (normalizeText(String(r[1] || '')) !== normBank) continue;
       if (normalizeText(String(r[3] || '')) !== normName) continue;
-      if (normalizeText(String(r[4] || '')) !== normTitle) continue;
       candidates.push(rowToCandidate(r, '보관'));
     }
   }
@@ -859,7 +918,6 @@ function handleFindArchivedSellers(bank, sellerName, title) {
     if (srEmail && srEmail === myEmail) continue; // 내 데이터 제외
     if (normalizeText(String(sr[1] || '')) !== normBank) continue;
     if (normalizeText(String(sr[3] || '')) !== normName) continue;
-    if (normalizeText(String(sr[4] || '')) !== normTitle) continue;
     candidates.push(rowToCandidate(sr, '현재'));
   }
 
@@ -891,8 +949,8 @@ function handleSaveSellerFields(data) {
 
   var email = getCurrentUserEmail();
   if (rowIdx === -1) {
-    sheet.appendRow([todayLabel, bank, resolvedBranch, seller, '', fam, home, tend, hist, etc, '', email]);
-    sheet.getRange(sheet.getLastRow(), 1, 1, 12).setWrap(true);
+    insertSellerIntoGroup(sheet, rows, bank, resolvedBranch,
+      [todayLabel, bank, resolvedBranch, seller, '', fam, home, tend, hist, etc, '', email]);
   } else {
     var existingEmail = String(rows[rowIdx][11] || '').trim().toLowerCase();
     if (existingEmail && email && existingEmail !== email.toLowerCase()) {
