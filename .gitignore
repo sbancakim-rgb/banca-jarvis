@@ -1,2 +1,3 @@
 .claude/
 *.local.json
+.git_broken_backup/
