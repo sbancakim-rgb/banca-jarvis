@@ -733,6 +733,7 @@ function handleListBranches() {
   var byKey = {};
   var branches = [];
   for (var i = 1; i < rows.length; i++) {
+    if (isHeaderEchoRow(rows, i)) continue;
     var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
     if (email && rowEmail && rowEmail !== email) continue;
     var bank = String(bankCol[i] || '').trim();
@@ -1330,6 +1331,14 @@ function branchKey(bank, branch) {
   return normalizeText(bank) + '|' + normalizeText(branch);
 }
 
+// 시트 중간에 머리글이 한 번 더 들어가 있으면("은행명 | 지점명" 행) 그게 지점 하나로 잡혀
+// 드롭다운과 지도에 유령 지점이 나타난다. 0행과 값이 똑같은 행은 지점으로 세지 않는다.
+function isHeaderEchoRow(rows, i) {
+  if (i === 0 || !rows.length) return true;
+  return String(rows[i][1] || '') === String(rows[0][1] || '') &&
+         String(rows[i][2] || '') === String(rows[0][2] || '');
+}
+
 // "구월북지점" / "구월북" / "만수6동(점)" 처럼 접미어만 다른 표기를 같은 곳으로 보기 위해
 // 접미어를 떼어낸 알맹이를 만든다.
 var BRANCH_SUFFIX_RE = /(\(점\)|\(출\)|종합금융센터|금융센터|출장소|영업부|PB센터|센터|지점|점)$/;
@@ -1395,6 +1404,7 @@ function listAllBranchesForGeo() {
   var seen = {};
   var out = [];
   for (var i = 1; i < rows.length; i++) {
+    if (isHeaderEchoRow(rows, i)) continue;
     var bank = String(bankCol[i] || '').trim();
     var branch = String(branchCol[i] || '').trim();
     if (!bank || !branch) continue;
@@ -1414,6 +1424,7 @@ function listTargetBranches(email) {
   var seen = {};
   var out = [];
   for (var i = 1; i < rows.length; i++) {
+    if (isHeaderEchoRow(rows, i)) continue;
     var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
     if (email && rowEmail && rowEmail !== email) continue;
     var isTarget = rows[i][10] === true || String(rows[i][10] || '').toUpperCase() === 'TRUE';
