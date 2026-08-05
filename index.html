@@ -237,6 +237,16 @@
   .map-dot.called { background: transparent; border: 2px dashed #b91c1c; }
   .map-dot.visited { background: #dbeafe; border: 1px solid #93c5fd; }
   .map-note { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; }
+  /* 마커 옆 지점 이름표. 확대했을 때 화면에 보이는 것만 붙인다 */
+  .map-label {
+    margin-left: 13px; padding: 2px 6px; white-space: nowrap; pointer-events: none;
+    background: rgba(255,255,255,0.93); border: 1px solid #cbd5e1; border-radius: 6px;
+    font-size: 11px; font-weight: 700; color: #b91c1c;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.15);
+  }
+  .map-label .bk { font-weight: 500; color: var(--muted); margin-right: 3px; }
+  .map-label.called { color: #b91c1c; border-style: dashed; }
+  .map-label.done { color: #1d4ed8; font-weight: 600; opacity: 0.8; }
   .map-info {
     margin-top: 10px; padding: 10px 12px; background: #f8fafc;
     border: 1px solid var(--border); border-radius: 10px; font-size: 13px; line-height: 1.6;
@@ -350,6 +360,7 @@
           <span><i class="map-dot called"></i>통화·제안서만</span>
           <span><i class="map-dot visited"></i>방문완료</span>
         </div>
+        <div id="mapZoomHint" class="map-note" style="display:none;">지도를 확대하면 지점 이름이 표시됩니다</div>
         <div id="mapInfo" class="map-info" style="display:none;"></div>
         <div id="mapNote" class="map-note"></div>
       </div>
@@ -1696,8 +1707,13 @@
       data: null, map: null, clusterer: null,
       markers: [],            // { key, marker, v, bank }
       unvisitedOnly: true, bank: '', fullscreen: false,
-      myMarker: null, myCircle: null
+      myMarker: null, myCircle: null, labels: []
     };
+
+    // 453곳 이름을 한꺼번에 띄우면 글자가 겹쳐 못 읽는다. 충분히 확대했을 때
+    // 화면 안에 들어온 지점만 이름을 붙인다. (클러스터가 풀리는 레벨과 맞춰둠)
+    const MAP_LABEL_MAX_LEVEL = 5;
+    const MAP_LABEL_MAX_COUNT = 80;
 
     const mapStatusEl = () => document.getElementById('mapStatus');
 
@@ -1831,12 +1847,19 @@
             title: info ? info.은행명 + ' ' + info.지점명 : ''
           });
           kakao.maps.event.addListener(marker, 'click', () => showMapInfo(p, info));
-          return { key: p.k, marker, v: p.v, bank: info ? info.은행명 : '' };
+          return {
+            key: p.k, marker, v: p.v,
+            bank: info ? info.은행명 : '',
+            branch: info ? info.지점명 : ''
+          };
         });
 
         mapState.clusterer = new kakao.maps.MarkerClusterer({
           map, averageCenter: true, minLevel: 6, disableClickZoom: false
         });
+
+        // 확대/이동이 끝날 때마다 이름표를 다시 계산한다 (드래그 중에는 뜨지 않는다)
+        kakao.maps.event.addListener(map, 'idle', updateMapLabels);
 
         // 은행 필터 채우기 (지도에 실제로 찍힌 은행만)
         const banks = [...new Set(mapState.markers.map(m => m.bank).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
@@ -1851,13 +1874,55 @@
       }
     }
 
+    // 지금 필터 조건에서 이 마커를 보여줘야 하는지
+    function mapMarkerPasses(m) {
+      const bankOk = !mapState.bank || m.bank === mapState.bank;
+      const stateOk = !mapState.unvisitedOnly || m.v < 2;
+      return bankOk && stateOk;
+    }
+
+    function clearMapLabels() {
+      mapState.labels.forEach(o => o.setMap(null));
+      mapState.labels = [];
+    }
+
+    // 화면에 보이는 마커에만 이름표를 붙인다. 축소 상태에서는 붙이지 않는다(글자가 겹쳐 못 읽음).
+    function updateMapLabels() {
+      if (!mapState.inited) return;
+      clearMapLabels();
+
+      const zoomedEnough = mapState.map.getLevel() <= MAP_LABEL_MAX_LEVEL;
+      const hint = document.getElementById('mapZoomHint');
+      if (hint) hint.style.display = zoomedEnough ? 'none' : 'block';
+      if (!zoomedEnough) return;
+
+      const bounds = mapState.map.getBounds();
+      const picked = [];
+      for (const m of mapState.markers) {
+        if (!mapMarkerPasses(m)) continue;
+        if (!bounds.contain(m.marker.getPosition())) continue;
+        picked.push(m);
+        if (picked.length >= MAP_LABEL_MAX_COUNT) break;
+      }
+
+      picked.forEach(m => {
+        const el = document.createElement('div');
+        el.className = 'map-label' + (m.v === 2 ? ' done' : m.v === 1 ? ' called' : '');
+        el.innerHTML = `<span class="bk">${escapeHtml(m.bank)}</span>${escapeHtml(m.branch)}`;
+        const ov = new kakao.maps.CustomOverlay({
+          position: m.marker.getPosition(), content: el,
+          xAnchor: 0, yAnchor: 0.5, zIndex: 1, clickable: false
+        });
+        ov.setMap(mapState.map);
+        mapState.labels.push(ov);
+      });
+    }
+
     function applyMapFilter() {
       if (!mapState.inited) return;
       const visible = [];
       mapState.markers.forEach(m => {
-        const bankOk = !mapState.bank || m.bank === mapState.bank;
-        const stateOk = !mapState.unvisitedOnly || m.v < 2;
-        if (bankOk && stateOk) visible.push(m.marker);
+        if (mapMarkerPasses(m)) visible.push(m.marker);
         else m.marker.setMap(null);
       });
       mapState.clusterer.clear();
@@ -1873,6 +1938,8 @@
       note += ` / 전체 ${shown.length}곳`;
       if (missing) note += `  (위치 미등록 ${missing}곳은 표시되지 않음)`;
       document.getElementById('mapNote').textContent = note;
+
+      updateMapLabels();
     }
 
     function showMapInfo(point, info) {
