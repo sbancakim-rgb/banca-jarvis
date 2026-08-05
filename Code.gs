@@ -7,6 +7,8 @@ var SHEET_USERS = '사용자목록';
 var SHEET_DELETED = '삭제된 판매자';
 var SHEET_TASKS = '업무리스트';
 var SHEET_TASKS_DONE = '완료된업무';
+var SHEET_GEO = '지점위치';   // 지점별 좌표(위도/경도). 지도 기능용. 지점당 1행.
+var SHEET_GEO_SRC = '지점주소'; // 사용자가 엑셀에서 붙여넣는 원본 주소 시트(은행명/지점명/주소)
 var DATA_SPREADSHEET_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4'; // 시스템 데이터 전용 스프레드시트("방카 활동의 기록 (시스템 데이터)")
 
 // 실제 데이터가 저장된 스프레드시트. 이 스크립트 파일 자체는 기존 "은행분석 및 방문정리" 파일에 묶여있지만,
@@ -115,7 +117,7 @@ function readRowsCached(sheetName) {
 }
 
 var CACHED_SHEETS = [SHEET_SELLER, SHEET_PROPOSAL, SHEET_LOG, SHEET_USERS,
-                     SHEET_DELETED, SHEET_TASKS, SHEET_TASKS_DONE];
+                     SHEET_DELETED, SHEET_TASKS, SHEET_TASKS_DONE, SHEET_GEO];
 
 function invalidateAllCaches() {
   var keys = CACHED_SHEETS.map(function (n) { return 'VER:' + n; });
@@ -237,6 +239,10 @@ function doGet(e) {
       result = handleDashboardBank(e.parameter.bank || '');
     } else if (action === 'bootstrap') {
       result = handleBootstrap();
+    } else if (action === 'mapData') {
+      result = handleMapData();
+    } else if (action === 'geoStatus') {
+      result = handleGeoStatus();
     } else {
       result = { error: 'unknown action' };
     }
@@ -729,9 +735,11 @@ function handleListBranches() {
     var bank = String(bankCol[i] || '').trim();
     var branch = String(branchCol[i] || '').trim();
     if (!bank || !branch) continue;
-    var key = normalizeText(bank) + '|' + normalizeText(branch);
+    var key = branchKey(bank, branch);
     if (!byKey[key]) {
-      byKey[key] = { 은행명: bank, 지점명: branch, sellers: [] };
+      // k(지점키)는 지도에서 좌표와 지점을 잇는 조인 키. 서버가 만든 키를 그대로 쓰게 해서
+      // normalizeText를 프런트로 이식하지 않는다(두 구현이 어긋나는 버그를 원천 차단).
+      byKey[key] = { k: key, 은행명: bank, 지점명: branch, sellers: [] };
       branches.push(byKey[key]);
     }
     var name = String(rows[i][3] || '').trim();
@@ -1304,6 +1312,467 @@ function handleBootstrap() {
     tasks: safe(handleListTasks),
     dashboard: safe(handleDashboard)
   };
+}
+
+// === 지도 (지점 좌표 + 방문/미방문) ==========================================
+// 시트에는 지점 "이름"만 있고 좌표가 없다. 지점위치 시트에 좌표를 모아두고,
+// 이번 달 방문 여부를 얹어서 지도에 그린다.
+// 좌표 수집(importBranchAddresses/geocodeAll)은 Apps Script 편집기에서 직접 실행한다.
+
+var GEO_HEADERS = ['지점키', '은행명', '지점명', '위도', '경도', '상태', '주소', '좌표출처', '매칭결과', '갱신일시'];
+var GEO_COL_COUNT = 10;
+
+// 지점을 식별하는 표준 키. 코드 전체가 이 형식을 쓴다.
+function branchKey(bank, branch) {
+  return normalizeText(bank) + '|' + normalizeText(branch);
+}
+
+// "구월북지점" / "구월북" / "만수6동(점)" 처럼 접미어만 다른 표기를 같은 곳으로 보기 위해
+// 접미어를 떼어낸 알맹이를 만든다.
+var BRANCH_SUFFIX_RE = /(\(점\)|\(출\)|종합금융센터|금융센터|출장소|영업부|PB센터|센터|지점|점)$/;
+function branchCore(name) {
+  var v = normalizeText(name);
+  while (true) {
+    var n = v.replace(BRANCH_SUFFIX_RE, '');
+    if (n === v || !n) return v;
+    v = n;
+  }
+}
+
+// 지점명 두 개가 같은 곳인지 점수로 판단한다.
+// 단순 부분일치(indexOf)를 쓰면 "인천"이 "인천논현역지점"에 붙어버려서
+// 엉뚱한 지점의 주소를 가져오게 된다. 접미어를 뗀 알맹이끼리 비교해야 안전하다.
+function branchNameScore(nameA, nameB) {
+  var a = normalizeText(nameA), b = normalizeText(nameB);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  var ca = branchCore(a), cb = branchCore(b);
+  if (ca && ca === cb) return 0.95;
+  return similarity(ca, cb);
+}
+
+// 도로명 뒤에 건물명/층/지점명이 붙어 있으면 주소 검색이 실패한다. 도로명까지만 남긴다.
+// "인천 남동구 백범로 124번길 7 만수주공아파트상가 1층 국민은행 만수동(점)" -> "인천 남동구 백범로 124번길 7"
+// 번길을 먼저 찾아야 한다. 그냥 찾으면 "백범로 124"에서 끊겨 실제 위치와 수백 m 어긋난다.
+function cleanRoadAddress(raw) {
+  var s = String(raw || '').replace(/,/g, ' ');
+  var m = s.match(/[가-힣A-Za-z0-9]*[로길]\s*\d+번길\s*\d+(?:-\d+)?/);
+  if (!m) m = s.match(/[가-힣A-Za-z0-9]*[로길]\s*\d+(?:-\d+)?/);
+  if (!m) return s.replace(/\s+/g, ' ').trim();
+  return s.substring(0, m.index + m[0].length).replace(/\s+/g, ' ').trim();
+}
+
+// 카카오는 x=경도, y=위도로 돌려주는데 지도 SDK 생성자는 (위도, 경도) 순서다.
+// 뒤바꿔 넣으면 전 지점이 서해 한복판에 찍히므로 대한민국 범위로 걸러낸다.
+function isValidKoreaCoord(lat, lng) {
+  return isFinite(lat) && isFinite(lng) &&
+         lat >= 33.0 && lat <= 38.7 && lng >= 124.5 && lng <= 132.0;
+}
+
+function getGeoSheet() {
+  var ss = getSS();
+  var sheet = ss.getSheetByName(SHEET_GEO);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_GEO);
+    sheet.appendRow(GEO_HEADERS);
+    sheet.setFrozenRows(1);
+  }
+  // 열 수가 모자라면 아래 일괄 쓰기(setValues)가 범위 불일치로 실패한다.
+  var missing = GEO_COL_COUNT - sheet.getMaxColumns();
+  if (missing > 0) sheet.insertColumnsAfter(sheet.getMaxColumns(), missing);
+  return sheet;
+}
+
+// 판매자정보에 등록된 모든 지점(중복 제거). 좌표는 담당자와 무관하게 공용이므로
+// 이메일/영업대상 필터 없이 전부 모은다.
+function listAllBranchesForGeo() {
+  var rows = readRowsCached(SHEET_SELLER);
+  var bankCol = fillMergedColumn(rows, 1);
+  var branchCol = fillMergedColumn(rows, 2);
+  var seen = {};
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var bank = String(bankCol[i] || '').trim();
+    var branch = String(branchCol[i] || '').trim();
+    if (!bank || !branch) continue;
+    var key = branchKey(bank, branch);
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push({ key: key, 은행명: bank, 지점명: branch });
+  }
+  return out;
+}
+
+// 지도에 표시할 대상 = 모수(K열 영업대상 TRUE) + 내 담당분. 대시보드와 같은 기준.
+function listTargetBranches(email) {
+  var rows = readRowsCached(SHEET_SELLER);
+  var bankCol = fillMergedColumn(rows, 1);
+  var branchCol = fillMergedColumn(rows, 2);
+  var seen = {};
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    var isTarget = rows[i][10] === true || String(rows[i][10] || '').toUpperCase() === 'TRUE';
+    if (!isTarget) continue;
+    var bank = String(bankCol[i] || '').trim();
+    var branch = String(branchCol[i] || '').trim();
+    if (!bank || !branch) continue;
+    var key = branchKey(bank, branch);
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push({ key: key, 은행명: bank, 지점명: branch });
+  }
+  return out;
+}
+
+// 이번 달 방문 상태를 지점키별로 계산한다. 0=미접촉, 1=통화/제안서만, 2=방문완료.
+// 대시보드와 달리 은행명 원문으로 버킷팅하지 않고 정규화 키 하나만 쓴다
+// (은행명 표기가 시트마다 미세하게 달라도 어긋나지 않도록).
+function buildVisitStateThisMonth(email) {
+  var thisMonth = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+  var logRows = readRowsCached(SHEET_LOG);
+  var state = {};
+  for (var j = 1; j < logRows.length; j++) {
+    var r = logRows[j];
+    if (String(r[0] || '').indexOf(thisMonth) !== 0) continue;
+    var logEmail = String(r[5] || '').trim().toLowerCase();
+    if (email && logEmail && logEmail !== email) continue;
+    var bank = String(r[1] || '').trim();
+    var branch = String(r[2] || '').trim();
+    if (!bank || !branch) continue;
+    // 방문유형(G열)이 비어 있으면 음성 기록 경로(handleCommit)로 남은 과거 행이다.
+    // 그 행들은 방문이력/대화내용 본문을 갖고 있으니 실제 방문으로 본다.
+    var type = String(r[6] || '').trim();
+    var v = (!type || type === '지점방문') ? 2 : 1;
+    var key = branchKey(bank, branch);
+    if (!state[key] || v > state[key]) state[key] = v;
+  }
+  return state;
+}
+
+// 지점위치 시트를 지점키 -> {lat, lng} 로 읽는다. 좌표가 이상하면 없는 것으로 친다.
+function readGeoByKey() {
+  var rows = readRowsCached(SHEET_GEO);
+  var map = {};
+  for (var i = 1; i < rows.length; i++) {
+    var key = String(rows[i][0] || '').trim();
+    if (!key) continue;
+    var lat = Number(rows[i][3]);
+    var lng = Number(rows[i][4]);
+    if (!isValidKoreaCoord(lat, lng)) continue;
+    map[key] = { lat: lat, lng: lng };
+  }
+  return map;
+}
+
+// 지도용 데이터. 은행명/지점명은 프런트가 branchListData에 이미 갖고 있으므로 싣지 않는다.
+function handleMapData() {
+  var email = getCurrentUserEmail().toLowerCase();
+  var targets = listTargetBranches(email);
+  var visitState = buildVisitStateThisMonth(email);
+  var geo = readGeoByKey();
+
+  var points = [];
+  var missing = [];
+  for (var i = 0; i < targets.length; i++) {
+    var t = targets[i];
+    var g = geo[t.key];
+    if (!g) { missing.push({ 은행명: t.은행명, 지점명: t.지점명 }); continue; }
+    points.push({ k: t.key, lat: g.lat, lng: g.lng, v: visitState[t.key] || 0 });
+  }
+
+  return {
+    ok: true,
+    month: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM'),
+    total: targets.length,
+    points: points,
+    missing: missing
+  };
+}
+
+// 좌표 수집이 잘 됐는지 확인용(읽기 전용). 상태별 개수와 표본을 돌려준다.
+function handleGeoStatus() {
+  var rows = readRowsCached(SHEET_GEO);
+  if (rows.length === 0) return { ok: true, 전체: 0, message: '지점위치 시트가 아직 없습니다.' };
+
+  var byStatus = {};
+  var bySource = {};
+  var badCoord = [];
+  var samples = [];
+  var failed = [];
+
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!String(r[0] || '').trim()) continue;
+    var st = String(r[5] || '').trim() || '(미처리)';
+    byStatus[st] = (byStatus[st] || 0) + 1;
+    var src = String(r[7] || '').trim();
+    if (src) bySource[src] = (bySource[src] || 0) + 1;
+
+    var lat = Number(r[3]), lng = Number(r[4]);
+    if (st === '자동' || st === '확정') {
+      if (!isValidKoreaCoord(lat, lng)) badCoord.push(r[1] + ' ' + r[2] + ' (' + lat + ',' + lng + ')');
+      else if (samples.length < 12) {
+        samples.push({ 은행: r[1], 지점: r[2], 위도: lat, 경도: lng, 출처: src, 매칭결과: String(r[8] || '') });
+      }
+    } else if (st === '실패' && failed.length < 40) {
+      failed.push(r[1] + ' ' + r[2]);
+    }
+  }
+
+  return { ok: true, 전체: rows.length - 1, 상태별: byStatus, 출처별: bySource,
+           좌표이상: badCoord, 표본: samples, 실패목록: failed };
+}
+
+// --- 좌표 수집 (관리자용: Apps Script 편집기에서 실행) ------------------------
+
+function getKakaoRestKey() {
+  var key = (PropertiesService.getScriptProperties().getProperty('KAKAO_REST_KEY') || '').trim();
+  if (!key) {
+    throw new Error('KAKAO_REST_KEY가 없습니다. 프로젝트 설정 > 스크립트 속성에 카카오 REST API 키를 추가하세요.');
+  }
+  return key;
+}
+
+function kakaoGet(path, params) {
+  var qs = Object.keys(params).map(function (k) {
+    return k + '=' + encodeURIComponent(params[k]);
+  }).join('&');
+  var res = UrlFetchApp.fetch('https://dapi.kakao.com' + path + '?' + qs, {
+    method: 'get',
+    headers: { Authorization: 'KakaoAK ' + getKakaoRestKey() },
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  var body = res.getContentText();
+  if (code !== 200) throw new Error('카카오 API ' + code + ': ' + body);
+  return JSON.parse(body);
+}
+
+// 주소로 좌표 찾기 (가장 정확). 정제한 도로명으로 먼저 시도하고, 안 되면 원본 그대로 한 번 더.
+function geocodeByAddress(address) {
+  var tries = [];
+  var cleaned = cleanRoadAddress(address);
+  if (cleaned) tries.push(cleaned);
+  if (address && address !== cleaned) tries.push(address);
+
+  for (var t = 0; t < tries.length; t++) {
+    var data;
+    try { data = kakaoGet('/v2/local/search/address.json', { query: tries[t], size: 1 }); }
+    catch (e) { continue; }
+    var docs = data.documents || [];
+    if (!docs.length) continue;
+    var d = docs[0];
+    var lat = Number(d.y), lng = Number(d.x);
+    if (!isValidKoreaCoord(lat, lng)) continue;
+    return { lat: lat, lng: lng, label: d.address_name || tries[t], source: '주소검색' };
+  }
+  return null;
+}
+
+// 이름으로 좌표 찾기. 다른 은행 지점을 잘못 집는 것이 가장 위험하므로
+// 장소명에 은행명이 들어있지 않으면 무조건 탈락시킨다.
+function geocodeByName(bank, branch) {
+  var normBank = normalizeText(bank);
+  var normBranch = normalizeText(branch);
+  var queries = [bank + ' ' + branch, branch + ' ' + bank];
+  var best = null, bestScore = -1;
+
+  for (var q = 0; q < queries.length; q++) {
+    var data;
+    try { data = kakaoGet('/v2/local/search/keyword.json', { query: queries[q], size: 15 }); }
+    catch (e) { continue; }
+    var docs = data.documents || [];
+    for (var i = 0; i < docs.length; i++) {
+      var d = docs[i];
+      var lat = Number(d.y), lng = Number(d.x);
+      if (!isValidKoreaCoord(lat, lng)) continue;
+      var place = normalizeText(d.place_name);
+      if (place.indexOf(normBank) === -1) continue; // 다른 은행 → 탈락
+      var score = 0;
+      if (d.category_group_code === 'BK9') score += 2;   // 은행 카테고리
+      if (place.indexOf(normBranch) !== -1) score += 3;  // 지점명까지 포함
+      else score += similarity(place, normBank + normBranch);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { lat: lat, lng: lng, label: d.place_name, source: '이름검색' };
+      }
+    }
+    if (bestScore >= 5) break; // 은행 카테고리 + 지점명 완전 일치면 더 볼 필요 없음
+  }
+  return bestScore >= 2 ? best : null;
+}
+
+// 판매자정보의 모든 지점에 대해 지점위치 시트에 빈 행을 만든다. 기존 행은 건드리지 않는다.
+function syncGeoSheet() {
+  var sheet = getGeoSheet();
+  var rows = readRows(SHEET_GEO);
+  var have = {};
+  for (var i = 1; i < rows.length; i++) have[String(rows[i][0] || '').trim()] = true;
+
+  var toAdd = [];
+  var all = listAllBranchesForGeo();
+  for (var j = 0; j < all.length; j++) {
+    if (have[all[j].key]) continue;
+    toAdd.push([all[j].key, all[j].은행명, all[j].지점명, '', '', '', '', '', '', '']);
+  }
+  if (toAdd.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, GEO_COL_COUNT).setValues(toAdd);
+    SpreadsheetApp.flush();
+    invalidateAllCaches();
+  }
+  return toAdd.length;
+}
+
+// 좌표를 채운다. 상태가 '확정'(손으로 고친 것)이나 '자동'(이미 성공)인 행은 절대 건드리지 않으므로
+// 몇 번을 다시 실행해도 안전하고, 중간에 멈춰도 이어서 진행된다.
+function geocodeBatch(limit) {
+  limit = limit || 2000;
+  var sheet = getGeoSheet();
+  var rows = readRows(SHEET_GEO);
+
+  var pending = [];
+  for (var i = 1; i < rows.length; i++) {
+    var status = String(rows[i][5] || '').trim();
+    if (status === '확정' || status === '자동') continue;
+    if (!String(rows[i][0] || '').trim()) continue;
+    pending.push(i);
+  }
+
+  var t0 = new Date().getTime();
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+  var done = 0, ok = 0, fail = 0;
+  var failSamples = [];
+
+  for (var p = 0; p < pending.length && done < limit; p++) {
+    if (new Date().getTime() - t0 > 240000) break; // 6분 제한 전에 스스로 멈춘다
+    var idx = pending[p];
+    var r = rows[idx];
+    var bank = String(r[1] || '').trim();
+    var branch = String(r[2] || '').trim();
+    var addr = String(r[6] || '').trim();
+
+    var hit = null;
+    try {
+      if (addr) hit = geocodeByAddress(addr);
+      if (!hit) hit = geocodeByName(bank, branch);
+    } catch (e) {
+      hit = null;
+    }
+    done++;
+
+    if (hit) {
+      ok++;
+      r[3] = hit.lat; r[4] = hit.lng; r[5] = '자동';
+      r[7] = hit.source; r[8] = hit.label; r[9] = stamp;
+    } else {
+      fail++;
+      r[5] = '실패'; r[9] = stamp;
+      if (failSamples.length < 20) failSamples.push(bank + ' ' + branch);
+    }
+  }
+
+  // 행마다 쓰면 수백 번 왕복이라 느리다. D~J 전체를 한 번에 기록한다.
+  // (슬라이스로 자르면 시트 열 수가 모자랄 때 길이가 어긋나므로 명시적으로 7칸을 만든다)
+  if (rows.length > 1) {
+    var block = [];
+    for (var b = 1; b < rows.length; b++) {
+      var rr = rows[b];
+      block.push([rr[3] || '', rr[4] || '', rr[5] || '', rr[6] || '', rr[7] || '', rr[8] || '', rr[9] || '']);
+    }
+    sheet.getRange(2, 4, block.length, 7).setValues(block);
+  }
+  SpreadsheetApp.flush();
+  invalidateAllCaches(); // 편집기 실행은 doGet을 안 거치므로 여기서 직접 캐시를 버린다
+
+  var result = { 처리: done, 성공: ok, 실패: fail, 남은개수: pending.length - done, 실패예시: failSamples };
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+// 편집기에서 이것 하나만 실행하면 된다. 남은개수가 0이 될 때까지 다시 실행.
+function geocodeAll() {
+  var added = syncGeoSheet();
+  var res = geocodeBatch(2000);
+  res.신규지점추가 = added;
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
+// 지점주소 시트(엑셀에서 붙여넣은 원본)를 읽어 지점위치의 주소(G열)를 채운다.
+// 열 위치가 아니라 머리글 이름으로 찾으므로 엑셀 열 순서가 달라도 동작한다.
+function importBranchAddresses() {
+  var src = getSS().getSheetByName(SHEET_GEO_SRC);
+  if (!src) {
+    throw new Error('"' + SHEET_GEO_SRC + '" 시트가 없습니다. 엑셀 내용을 은행명/지점명/주소 머리글과 함께 붙여넣어 주세요.');
+  }
+  var srcRows = src.getDataRange().getValues();
+  if (srcRows.length < 2) throw new Error('"' + SHEET_GEO_SRC + '" 시트에 데이터가 없습니다.');
+
+  var header = srcRows[0].map(function (h) { return String(h || '').replace(/\s+/g, ''); });
+  function findCol(cands) {
+    for (var i = 0; i < header.length; i++) {
+      for (var j = 0; j < cands.length; j++) {
+        if (header[i].indexOf(cands[j]) !== -1) return i;
+      }
+    }
+    return -1;
+  }
+  var cBank = findCol(['은행', '금융기관', '기관']);
+  var cBranch = findCol(['지점', '점포', '영업점']);
+  var cAddr = findCol(['주소', '소재지']);
+  if (cBranch === -1 || cAddr === -1) {
+    throw new Error('머리글에서 지점/주소 열을 찾지 못했습니다. 머리글: ' + header.join(', '));
+  }
+
+  var src2 = [];
+  for (var i = 1; i < srcRows.length; i++) {
+    var sBank = cBank === -1 ? '' : String(srcRows[i][cBank] || '').trim();
+    var sBranch = String(srcRows[i][cBranch] || '').trim();
+    var sAddr = String(srcRows[i][cAddr] || '').trim();
+    if (!sBranch || !sAddr) continue;
+    src2.push({ normBank: normalizeText(sBank), branch: sBranch, addr: sAddr });
+  }
+
+  syncGeoSheet();
+  var sheet = getGeoSheet();
+  var rows = readRows(SHEET_GEO);
+  var filled = 0;
+  var unmatched = [];
+  // 0.85 미만은 매칭하지 않는다. 틀린 주소는 엉뚱한 건물로 찾아가게 하므로
+  // 주소가 없는 것(→ 이름 검색으로 넘어감)보다 나쁘다.
+  var MATCH_THRESHOLD = 0.85;
+
+  for (var g = 1; g < rows.length; g++) {
+    if (String(rows[g][6] || '').trim()) continue; // 이미 주소 있음
+    var bank = String(rows[g][1] || '').trim();
+    var branch = String(rows[g][2] || '').trim();
+    var normBank = normalizeText(bank);
+
+    var addr = null, bestScore = MATCH_THRESHOLD;
+    for (var m = 0; m < src2.length; m++) {
+      // 은행명은 표기가 달라도 되게 느슨히("NH농협은행" vs "농협은행"), 지점명은 엄격히 본다.
+      if (!textMatches(src2[m].normBank, normBank)) continue;
+      var s = branchNameScore(branch, src2[m].branch);
+      if (s > bestScore) { bestScore = s; addr = src2[m].addr; }
+    }
+
+    if (addr) { rows[g][6] = addr; filled++; }
+    else unmatched.push(bank + ' ' + branch);
+  }
+
+  if (rows.length > 1) {
+    var col = [];
+    for (var c = 1; c < rows.length; c++) col.push([rows[c][6] || '']);
+    sheet.getRange(2, 7, col.length, 1).setValues(col);
+  }
+  SpreadsheetApp.flush();
+  invalidateAllCaches();
+
+  var out = { 주소채움: filled, 매칭실패: unmatched.length, 실패목록: unmatched.slice(0, 30) };
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
 }
 
 function sanitizeText(text) {

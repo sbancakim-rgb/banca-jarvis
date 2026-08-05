@@ -215,6 +215,35 @@
   .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
   .branch-chip.unvisited { background: #fee2e2; color: #b91c1c; }
 
+  /* 지도 */
+  .map-controls { display: flex; gap: 6px; margin-bottom: 8px; }
+  .map-controls select { flex: 1; }
+  .map-canvas {
+    width: 100%; height: 62vh; min-height: 320px; border-radius: 12px;
+    overflow: hidden; border: 1px solid var(--border); background: #eef2f7;
+  }
+  .map-wrap.fullscreen {
+    position: fixed; inset: 0; z-index: 200; background: var(--card);
+    padding: 10px; margin: 0; border-radius: 0; overflow-y: auto;
+  }
+  .map-wrap.fullscreen .map-canvas { height: calc(100vh - 132px); }
+  .map-legend {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;
+    font-size: 11.5px; color: var(--muted); align-items: center; justify-content: center;
+  }
+  .map-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .map-dot.unvisited { background: #fee2e2; border: 2px solid #b91c1c; }
+  .map-dot.called { background: transparent; border: 2px dashed #b91c1c; }
+  .map-dot.visited { background: #dbeafe; border: 1px solid #93c5fd; }
+  .map-note { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; }
+  .map-info {
+    margin-top: 10px; padding: 10px 12px; background: #f8fafc;
+    border: 1px solid var(--border); border-radius: 10px; font-size: 13px; line-height: 1.6;
+  }
+  .map-info-title { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+  .map-info-sellers { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
   /* 업무 LIST */
   .task-target-toggle { display: flex; gap: 8px; }
   .task-toggle-btn {
@@ -300,6 +329,31 @@
       </div>
       <button id="logVisitBtn" class="btn-primary" style="margin-top:10px;">방문 입력</button>
       <div id="visitStatus" class="status-box"></div>
+    </div>
+
+    <!-- ①-2 방문 지도 -->
+    <div class="card" id="mapCard">
+      <h3>방문 지도</h3>
+      <button id="mapOpenBtn" class="btn-primary">지도 열기</button>
+      <div id="mapWrap" class="map-wrap" style="display:none;">
+        <div class="map-controls">
+          <select id="mapBankSelect"><option value="">전체 은행</option></select>
+          <button id="mapUnvisitedBtn" class="task-toggle-btn active" style="flex:0 0 auto;padding:9px 12px;">미방문만</button>
+        </div>
+        <div class="map-controls">
+          <button id="mapLocateBtn" class="btn-neutral" style="padding:9px 12px;">내 위치</button>
+          <button id="mapFullBtn" class="btn-neutral" style="padding:9px 12px;">전체화면</button>
+        </div>
+        <div id="mapCanvas" class="map-canvas"></div>
+        <div class="map-legend">
+          <span><i class="map-dot unvisited"></i>미방문</span>
+          <span><i class="map-dot called"></i>통화·제안서만</span>
+          <span><i class="map-dot visited"></i>방문완료</span>
+        </div>
+        <div id="mapInfo" class="map-info" style="display:none;"></div>
+        <div id="mapNote" class="map-note"></div>
+      </div>
+      <div id="mapStatus" class="status-box"></div>
     </div>
 
     <!-- ② 판매자 정보 -->
@@ -1630,6 +1684,255 @@
       toggleDashboardListBtn.textContent = hidden ? '은행별 방문 현황 숨기기' : '은행별 방문 현황 보기';
     };
     document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
+
+    // ─── ⑤ 방문 지도 ────────────────────────────────────────────────────────
+    // 카카오 지도 SDK는 「지도 열기」를 누른 뒤에야 불러온다.
+    // <head>에 넣으면 이 앱의 "외부 스크립트 0개 / 부팅 요청 1번" 성질이 깨지고,
+    // 카카오 장애가 첫 화면을 막게 된다.
+    const KAKAO_JS_KEY = '716f72f98726e9965086d554767e3b07'; // 카카오 JavaScript 키 (도메인 화이트리스트로 보호되므로 공개돼도 무방)
+
+    const mapState = {
+      sdkLoading: false, sdkReady: false, inited: false,
+      data: null, map: null, clusterer: null,
+      markers: [],            // { key, marker, v, bank }
+      unvisitedOnly: true, bank: '', fullscreen: false,
+      myMarker: null, myCircle: null
+    };
+
+    const mapStatusEl = () => document.getElementById('mapStatus');
+
+    function mapFail(msg) {
+      showStatus(mapStatusEl(), msg, true);
+    }
+
+    // 마커 이미지는 상태별로 3개만 만들어 수백 개 마커가 공유한다.
+    // (CustomOverlay를 쓰면 DOM이 수백 개 생기고 클러스터링도 안 된다)
+    const MAP_MARKER_IMAGES = {};
+    function mapMarkerImage(v) {
+      if (MAP_MARKER_IMAGES[v]) return MAP_MARKER_IMAGES[v];
+      let svg, size;
+      if (v === 0) {        // 미방문 = 동그라미
+        size = 22;
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="2.5"/></svg>';
+      } else if (v === 1) { // 통화/제안서만 = 반쯤 지워진 동그라미
+        size = 22;
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="none" stroke="#b91c1c" stroke-width="2.5" stroke-dasharray="3 2.5"/></svg>';
+      } else {              // 방문완료 = 지워진 상태(옅은 점)
+        size = 12;
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/></svg>';
+      }
+      MAP_MARKER_IMAGES[v] = new kakao.maps.MarkerImage(
+        'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+        new kakao.maps.Size(size, size),
+        { offset: new kakao.maps.Point(size / 2, size / 2) }
+      );
+      return MAP_MARKER_IMAGES[v];
+    }
+
+    // 지점키 → { 은행명, 지점명, sellers }. 서버가 만든 키(k)로 조인한다.
+    function mapBranchInfo(key) {
+      return branchListData.find(b => b.k === key) || null;
+    }
+
+    function loadKakaoSdk(done) {
+      if (mapState.sdkReady) { done(true); return; }
+      if (mapState.sdkLoading) return;
+      mapState.sdkLoading = true;
+
+      const script = document.createElement('script');
+      let settled = false;
+      const finish = ok => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        mapState.sdkLoading = false;
+        done(ok);
+      };
+      const watchdog = setTimeout(() => finish(false), 12000);
+
+      script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + KAKAO_JS_KEY +
+                   '&autoload=false&libraries=services,clusterer';
+      script.onload = () => {
+        if (!window.kakao || !kakao.maps) { finish(false); return; }
+        kakao.maps.load(() => { mapState.sdkReady = true; finish(true); });
+      };
+      script.onerror = () => finish(false);
+      document.head.appendChild(script);
+    }
+
+    function openMap() {
+      const wrap = document.getElementById('mapWrap');
+      const btn = document.getElementById('mapOpenBtn');
+
+      if (wrap.style.display !== 'none') {   // 이미 열려 있으면 접기
+        wrap.style.display = 'none';
+        btn.textContent = '지도 열기';
+        return;
+      }
+      wrap.style.display = 'block';
+      btn.textContent = '지도 접기';
+      if (mapState.inited) { setTimeout(() => mapState.map && mapState.map.relayout(), 0); return; }
+
+      hideStatus(mapStatusEl());
+      showStatus(mapStatusEl(), '지도를 불러오는 중...');
+
+      let sdkOk = null, data = null;
+      const tryInit = () => {
+        if (sdkOk === null || data === null) return;
+        if (!sdkOk) { mapFail('지도를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'); return; }
+        if (data.__net) { mapFail('통신이 원활하지 않습니다. 다시 시도해주세요.'); return; }
+        if (data.error || !data.points) { mapFail('지도 데이터 오류: ' + (data.error || '알 수 없음')); return; }
+        initMap(data);
+      };
+
+      // SDK와 데이터를 동시에 부른다 (순차로 하면 두 배 느리다)
+      loadKakaoSdk(ok => { sdkOk = ok; tryInit(); });
+      jsonpRequest(getUrl(), { action: 'mapData' }, d => { data = d || {}; tryInit(); });
+    }
+
+    function initMap(data) {
+      if (!window.kakao || !kakao.maps) { mapFail('지도를 불러오지 못했습니다.'); return; }
+      try {
+        mapState.data = data;
+        const canvas = document.getElementById('mapCanvas');
+        // 첫 중심: 좌표가 있는 지점들의 평균 (없으면 서울시청)
+        let cLat = 37.5665, cLng = 126.9780;
+        if (data.points.length) {
+          cLat = data.points.reduce((s, p) => s + p.lat, 0) / data.points.length;
+          cLng = data.points.reduce((s, p) => s + p.lng, 0) / data.points.length;
+        }
+        const map = new kakao.maps.Map(canvas, {
+          center: new kakao.maps.LatLng(cLat, cLng), level: 8
+        });
+        mapState.map = map;
+
+        // 키가 틀리거나 도메인 미등록이면 예외 없이 흰 박스만 뜬다. 타일 로드로 감지한다.
+        let tiles = false;
+        kakao.maps.event.addListener(map, 'tilesloaded', () => {
+          tiles = true;
+          hideStatus(mapStatusEl());
+        });
+        setTimeout(() => {
+          if (!tiles) mapFail('지도 키 설정을 확인해주세요 (카카오 개발자 사이트에 도메인 등록 여부).');
+        }, 8000);
+
+        mapState.markers = data.points.map(p => {
+          const info = mapBranchInfo(p.k);
+          const marker = new kakao.maps.Marker({
+            position: new kakao.maps.LatLng(p.lat, p.lng),
+            image: mapMarkerImage(p.v),
+            title: info ? info.은행명 + ' ' + info.지점명 : ''
+          });
+          kakao.maps.event.addListener(marker, 'click', () => showMapInfo(p, info));
+          return { key: p.k, marker, v: p.v, bank: info ? info.은행명 : '' };
+        });
+
+        mapState.clusterer = new kakao.maps.MarkerClusterer({
+          map, averageCenter: true, minLevel: 6, disableClickZoom: false
+        });
+
+        // 은행 필터 채우기 (지도에 실제로 찍힌 은행만)
+        const banks = [...new Set(mapState.markers.map(m => m.bank).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+        document.getElementById('mapBankSelect').innerHTML =
+          '<option value="">전체 은행</option>' +
+          banks.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
+
+        mapState.inited = true;
+        applyMapFilter();
+      } catch (e) {
+        mapFail('지도 초기화 실패: ' + e.message);
+      }
+    }
+
+    function applyMapFilter() {
+      if (!mapState.inited) return;
+      const visible = [];
+      mapState.markers.forEach(m => {
+        const bankOk = !mapState.bank || m.bank === mapState.bank;
+        const stateOk = !mapState.unvisitedOnly || m.v < 2;
+        if (bankOk && stateOk) visible.push(m.marker);
+        else m.marker.setMap(null);
+      });
+      mapState.clusterer.clear();
+      mapState.clusterer.addMarkers(visible);
+
+      const shown = mapState.markers.filter(m => (!mapState.bank || m.bank === mapState.bank));
+      const left = shown.filter(m => m.v === 0).length;
+      const called = shown.filter(m => m.v === 1).length;
+      const missing = (mapState.data && mapState.data.missing) ? mapState.data.missing.length : 0;
+
+      let note = `미방문 ${left}곳`;
+      if (called) note += ` · 통화만 ${called}곳`;
+      note += ` / 전체 ${shown.length}곳`;
+      if (missing) note += `  (위치 미등록 ${missing}곳은 표시되지 않음)`;
+      document.getElementById('mapNote').textContent = note;
+    }
+
+    function showMapInfo(point, info) {
+      const el = document.getElementById('mapInfo');
+      const label = point.v === 0 ? '미방문' : point.v === 1 ? '통화·제안서만' : '방문완료';
+      const cls = point.v === 2 ? 'visited' : 'unvisited';
+      const name = info ? `${escapeHtml(info.은행명)} ${escapeHtml(info.지점명)}` : escapeHtml(point.k);
+      const sellers = (info && info.sellers && info.sellers.length)
+        ? info.sellers.map(s => escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))).join(', ')
+        : '등록된 판매자 없음';
+      el.innerHTML =
+        `<div class="map-info-title">${name}</div>` +
+        `<span class="branch-chip ${cls}">${label}</span>` +
+        `<div class="map-info-sellers">${sellers}</div>`;
+      el.style.display = 'block';
+    }
+
+    function mapLocateMe() {
+      if (!mapState.inited) return;
+      if (!navigator.geolocation) { mapFail('이 브라우저는 위치 기능을 지원하지 않습니다.'); return; }
+      showStatus(mapStatusEl(), '현재 위치를 찾는 중...');
+      navigator.geolocation.getCurrentPosition(pos => {
+        hideStatus(mapStatusEl());
+        const here = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        if (mapState.myMarker) mapState.myMarker.setMap(null);
+        if (mapState.myCircle) mapState.myCircle.setMap(null);
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="6" fill="#2563eb" stroke="#fff" stroke-width="3"/></svg>';
+        mapState.myMarker = new kakao.maps.Marker({
+          position: here, zIndex: 10,
+          image: new kakao.maps.MarkerImage(
+            'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+            new kakao.maps.Size(18, 18), { offset: new kakao.maps.Point(9, 9) })
+        });
+        mapState.myMarker.setMap(mapState.map);
+        mapState.myCircle = new kakao.maps.Circle({
+          center: here, radius: Math.min(pos.coords.accuracy || 50, 500),
+          strokeWeight: 1, strokeColor: '#2563eb', strokeOpacity: 0.6,
+          fillColor: '#2563eb', fillOpacity: 0.12
+        });
+        mapState.myCircle.setMap(mapState.map);
+        mapState.map.setCenter(here);
+        mapState.map.setLevel(5);
+      }, err => {
+        // 거부되면 브라우저 설정에서만 되돌릴 수 있다. 재시도 루프를 돌지 않는다.
+        mapFail(err.code === 1
+          ? '위치 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요.'
+          : '현재 위치를 찾지 못했습니다.');
+      }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+    }
+
+    document.getElementById('mapOpenBtn').onclick = openMap;
+    document.getElementById('mapBankSelect').onchange = function () {
+      mapState.bank = this.value; applyMapFilter();
+    };
+    document.getElementById('mapUnvisitedBtn').onclick = function () {
+      mapState.unvisitedOnly = !mapState.unvisitedOnly;
+      this.classList.toggle('active', mapState.unvisitedOnly);
+      applyMapFilter();
+    };
+    document.getElementById('mapLocateBtn').onclick = mapLocateMe;
+    document.getElementById('mapFullBtn').onclick = function () {
+      mapState.fullscreen = !mapState.fullscreen;
+      document.getElementById('mapWrap').classList.toggle('fullscreen', mapState.fullscreen);
+      this.textContent = mapState.fullscreen ? '전체화면 해제' : '전체화면';
+      // 컨테이너 크기가 바뀌면 relayout을 불러야 한다 (안 하면 예전 크기로 그려진 채 남는다)
+      setTimeout(() => mapState.map && mapState.map.relayout(), 50);
+    };
 
     // ─── 첫 화면: 요청 1번으로 내 정보 + 지점목록 + 업무 + 대시보드를 한꺼번에 ────────
     // 예전에는 getMe / listBranches / listTasks / dashboard 를 각각 따로 불러서
