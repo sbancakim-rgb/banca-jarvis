@@ -321,8 +321,11 @@ function fillMergedColumn(rows, colIndex) {
   var last = '';
   for (var i = 0; i < rows.length; i++) {
     var v = String(rows[i][colIndex] || '');
+    // 머리글(0행)의 값은 아래로 이어지면 안 된다. 데이터 2행의 은행/지점 칸이 비어 있으면
+    // "은행명 | 지점명"이라는 유령 지점이 만들어져 목록과 지도에 나타난다.
+    if (i === 0) { filled.push(v); continue; }
     if (v) last = v;
-    filled.push(i === 0 ? v : last);
+    filled.push(last);
   }
   return filled;
 }
