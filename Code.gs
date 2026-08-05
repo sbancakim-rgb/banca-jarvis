@@ -1473,6 +1473,9 @@ function readGeoByKey() {
   for (var i = 1; i < rows.length; i++) {
     var key = String(rows[i][0] || '').trim();
     if (!key) continue;
+    // '실패'/'의심'은 지도에 올리지 않는다. 틀린 곳에 찍힌 핀은 없는 핀보다 나쁘다.
+    var st = String(rows[i][5] || '').trim();
+    if (st !== '자동' && st !== '확정') continue;
     var lat = Number(rows[i][3]);
     var lng = Number(rows[i][4]);
     if (!isValidKoreaCoord(lat, lng)) continue;
@@ -1586,13 +1589,16 @@ function geocodeByAddress(address) {
   return null;
 }
 
-// 이름으로 좌표 찾기. 다른 은행 지점을 잘못 집는 것이 가장 위험하므로
-// 장소명에 은행명이 들어있지 않으면 무조건 탈락시킨다.
+// 이름으로 좌표 찾기.
+// 가장 위험한 실패는 "은행은 맞는데 지점이 다른 곳"이다. 실제로 "기업은행 남동공단비전"을
+// 찾다가 부산의 "IBK기업은행 금사공단"이 잡힌 적이 있다. 은행명과 은행 카테고리만으로는
+// 그 은행의 아무 지점이나 통과하므로, 반드시 지점명 자체가 일치해야 채택한다.
 function geocodeByName(bank, branch) {
   var normBank = normalizeText(bank);
-  var normBranch = normalizeText(branch);
+  var coreBranch = branchCore(branch);
+  if (!coreBranch) return null;
   var queries = [bank + ' ' + branch, branch + ' ' + bank];
-  var best = null, bestScore = -1;
+  var best = null, bestScore = 0;
 
   for (var q = 0; q < queries.length; q++) {
     var data;
@@ -1603,20 +1609,29 @@ function geocodeByName(bank, branch) {
       var d = docs[i];
       var lat = Number(d.y), lng = Number(d.x);
       if (!isValidKoreaCoord(lat, lng)) continue;
+
       var place = normalizeText(d.place_name);
       if (place.indexOf(normBank) === -1) continue; // 다른 은행 → 탈락
-      var score = 0;
-      if (d.category_group_code === 'BK9') score += 2;   // 은행 카테고리
-      if (place.indexOf(normBranch) !== -1) score += 3;  // 지점명까지 포함
-      else score += similarity(place, normBank + normBranch);
+
+      // 장소명에서 은행명을 걷어낸 나머지가 그 지점을 가리키는 부분이다.
+      var placeBranch = branchCore(place.replace(normBank, ''));
+      if (!placeBranch) continue;
+
+      // 지점명이 일치해야만 점수를 준다. 은행명/카테고리는 가산점일 뿐 단독 합격 불가.
+      var score;
+      if (placeBranch.indexOf(coreBranch) !== -1 || coreBranch.indexOf(placeBranch) !== -1) score = 1;
+      else score = similarity(placeBranch, coreBranch);
+      if (d.category_group_code === 'BK9') score += 0.05; // 동점일 때만 갈리는 미세 가산점
+
       if (score > bestScore) {
         bestScore = score;
         best = { lat: lat, lng: lng, label: d.place_name, source: '이름검색' };
       }
     }
-    if (bestScore >= 5) break; // 은행 카테고리 + 지점명 완전 일치면 더 볼 필요 없음
+    if (bestScore >= 1) break; // 지점명 완전 일치면 더 볼 필요 없음
   }
-  return bestScore >= 2 ? best : null;
+  // 0.6 미만이면 "그 은행의 다른 지점"일 가능성이 크다. 틀린 핀은 없는 핀보다 나쁘다.
+  return bestScore >= 0.6 ? best : null;
 }
 
 // 판매자정보의 모든 지점에 대해 지점위치 시트에 빈 행을 만든다. 기존 행은 건드리지 않는다.
@@ -1706,11 +1721,92 @@ function geocodeBatch(limit) {
   return result;
 }
 
+// 이름 검색은 "은행은 맞는데 지점이 다른 곳"을 집을 수 있다. 담당 구역은 대체로 한 지역에
+// 모여 있으므로, 다른 지점들의 중앙값에서 크게 벗어난 좌표는 오검색으로 보고 걸러낸다.
+// 중앙값을 실제 데이터에서 계산하므로 담당 지역이 어디든(부산이든 인천이든) 그대로 작동한다.
+function flagDistantOutliers(maxKm) {
+  maxKm = maxKm || 100;
+  var sheet = getGeoSheet();
+  var rows = readRows(SHEET_GEO);
+
+  var pts = [];
+  for (var i = 1; i < rows.length; i++) {
+    var st = String(rows[i][5] || '').trim();
+    if (st !== '자동') continue; // 손으로 확정한 좌표는 건드리지 않는다
+    var lat = Number(rows[i][3]), lng = Number(rows[i][4]);
+    if (isValidKoreaCoord(lat, lng)) pts.push({ i: i, lat: lat, lng: lng });
+  }
+  if (pts.length < 10) return { ok: true, message: '표본이 적어 건너뜀', 검사대상: pts.length };
+
+  function median(arr) {
+    var s = arr.slice().sort(function (a, b) { return a - b; });
+    var m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+  var mLat = median(pts.map(function (p) { return p.lat; }));
+  var mLng = median(pts.map(function (p) { return p.lng; }));
+
+  var flagged = [];
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+  for (var k = 0; k < pts.length; k++) {
+    var p = pts[k];
+    // 위도 1도 ≈ 111km, 경도 1도 ≈ 88km(위도 37도 기준)
+    var dx = (p.lat - mLat) * 111, dy = (p.lng - mLng) * 88;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist <= maxKm) continue;
+    rows[p.i][5] = '의심';
+    rows[p.i][9] = stamp;
+    flagged.push(rows[p.i][1] + ' ' + rows[p.i][2] + ' (' + Math.round(dist) + 'km)');
+  }
+
+  if (flagged.length) {
+    var block = [];
+    for (var b = 1; b < rows.length; b++) {
+      var rr = rows[b];
+      block.push([rr[3] || '', rr[4] || '', rr[5] || '', rr[6] || '', rr[7] || '', rr[8] || '', rr[9] || '']);
+    }
+    sheet.getRange(2, 4, block.length, 7).setValues(block);
+    SpreadsheetApp.flush();
+    invalidateAllCaches();
+  }
+  return { ok: true, 검사대상: pts.length, 중앙값: [mLat, mLng], 의심표시: flagged.length, 목록: flagged };
+}
+
+// 이름 검색으로 찍힌 좌표를 새 판정 기준으로 다시 검사한다.
+// 지점명이 실제로 일치하는지 보는 기준이 강화됐으므로, 예전에 잘못 붙은 것들이 걸러진다.
+function regeocodeNames() {
+  var sheet = getGeoSheet();
+  var rows = readRows(SHEET_GEO);
+  var reset = 0;
+  for (var i = 1; i < rows.length; i++) {
+    var st = String(rows[i][5] || '').trim();
+    if (st === '확정') continue;                       // 손으로 고친 것은 보존
+    if (String(rows[i][7] || '').trim() !== '이름검색') continue;
+    rows[i][3] = ''; rows[i][4] = ''; rows[i][5] = ''; rows[i][7] = ''; rows[i][8] = '';
+    reset++;
+  }
+  var block = [];
+  for (var b = 1; b < rows.length; b++) {
+    var rr = rows[b];
+    block.push([rr[3] || '', rr[4] || '', rr[5] || '', rr[6] || '', rr[7] || '', rr[8] || '', rr[9] || '']);
+  }
+  sheet.getRange(2, 4, block.length, 7).setValues(block);
+  SpreadsheetApp.flush();
+  invalidateAllCaches();
+
+  var res = geocodeBatch(2000);
+  res.초기화 = reset;
+  res.이상치 = flagDistantOutliers(100);
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
 // 편집기에서 이것 하나만 실행하면 된다. 남은개수가 0이 될 때까지 다시 실행.
 function geocodeAll() {
   var added = syncGeoSheet();
   var res = geocodeBatch(2000);
   res.신규지점추가 = added;
+  res.이상치 = flagDistantOutliers(100);
   Logger.log(JSON.stringify(res, null, 2));
   return res;
 }
