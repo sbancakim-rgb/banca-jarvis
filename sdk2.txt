@@ -1,1 +1,0 @@
-{"errorType":"NotAuthorizedError","message":"App(방카 영업 효율화) disabled OPEN_MAP_AND_LOCAL service."}

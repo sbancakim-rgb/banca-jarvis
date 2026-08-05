@@ -3,3 +3,9 @@
 
 # 작업용 데이터 파일 (공개 저장소에 올리지 않음)
 *.tsv
+geo.json
+md.json
+lb*.json
+s[0-9].txt
+r.txt
+sdk*.txt
