@@ -17,6 +17,122 @@ function getSS() {
   return _cachedSS;
 }
 
+// === 시트 읽기 캐시 ==========================================================
+// 기존에는 요청 하나마다 시트를 통째로 다시 읽어서(getDataRange) 조회/입력이 모두 느렸다.
+// - readRows      : 같은 실행(요청) 안에서만 재사용. 행 번호로 쓰기를 하는 핸들러가 사용(항상 최신).
+// - readRowsCached: CacheService에 저장해 요청 사이에도 재사용. 읽기 전용 핸들러가 사용.
+// 쓰기가 일어난 요청은 doGet 끝에서 캐시를 통째로 무효화하므로 오래된 데이터가 남지 않는다.
+var _memRows = {};
+var _memFromCache = {}; // 이 데이터가 캐시에서 온 것인지 표시
+var CACHE_SECONDS = 21600; // Apps Script 캐시 최대치(6시간)
+var CACHE_CHUNK = 90 * 1024; // 캐시 값 1건 한도(100KB)보다 작게 잘라 저장
+var CACHE_MAX_CHUNKS = 60;
+
+// 시트에서 직접 읽는다. 같은 실행 안에서는 한 번만 읽는다.
+// 행 번호를 계산해서 그 자리에 쓰는 핸들러는 반드시 이 함수를 써야 한다.
+// (캐시에서 온 데이터로 행 번호를 계산하면 엉뚱한 행에 쓸 수 있으므로,
+//  메모리에 있는 값이 캐시 출처면 버리고 시트에서 다시 읽는다)
+function readRows(sheetName) {
+  if (_memRows[sheetName] && !_memFromCache[sheetName]) return _memRows[sheetName];
+  var sheet = getSS().getSheetByName(sheetName);
+  var rows = sheet ? sheet.getDataRange().getValues() : [];
+  _memRows[sheetName] = rows;
+  _memFromCache[sheetName] = false;
+  return rows;
+}
+
+// getValues()가 돌려주는 Date 객체를 JSON으로 손실 없이 넣고 빼기 위한 표시.
+function _rowsReplacer(key, value) {
+  var raw = this[key];
+  if (raw instanceof Date) return '\u0000D' + raw.getTime();
+  return value;
+}
+function _rowsReviver(key, value) {
+  if (typeof value === 'string' && value.charCodeAt(0) === 0 && value.charAt(1) === 'D') {
+    return new Date(Number(value.substring(2)));
+  }
+  return value;
+}
+
+// 캐시 세대(version). 무효화는 이 키를 지우는 것으로 끝난다(지워지면 자동으로 새로 읽음).
+function _cacheVersion(sheetName) {
+  var cache = CacheService.getScriptCache();
+  var key = 'VER:' + sheetName;
+  var v = cache.get(key);
+  if (!v) {
+    v = String(new Date().getTime()) + '_' + Math.floor(Math.random() * 100000);
+    cache.put(key, v, CACHE_SECONDS);
+  }
+  return v;
+}
+
+function readRowsCached(sheetName) {
+  if (_memRows[sheetName]) return _memRows[sheetName];
+  var cache = CacheService.getScriptCache();
+  var prefix = 'ROWS:' + sheetName + ':' + _cacheVersion(sheetName) + ':';
+  try {
+    var count = cache.get(prefix + 'n');
+    if (count) {
+      var n = Number(count);
+      var keys = [];
+      for (var i = 0; i < n; i++) keys.push(prefix + i);
+      var got = cache.getAll(keys);
+      var buf = '';
+      var complete = true;
+      for (i = 0; i < n; i++) {
+        var part = got[prefix + i];
+        if (part === undefined || part === null) { complete = false; break; }
+        buf += part;
+      }
+      if (complete) {
+        var cachedRows = JSON.parse(buf, _rowsReviver);
+        _memRows[sheetName] = cachedRows;
+        _memFromCache[sheetName] = true;
+        return cachedRows;
+      }
+    }
+  } catch (e) {
+    // 캐시가 깨졌으면 그냥 시트에서 읽는다.
+  }
+
+  var rows = readRows(sheetName);
+  if (rows.length === 0) return rows; // 시트가 아직 없는 상태는 캐시하지 않는다
+  try {
+    var text = JSON.stringify(rows, _rowsReplacer);
+    var chunks = Math.ceil(text.length / CACHE_CHUNK);
+    if (chunks <= CACHE_MAX_CHUNKS) {
+      var entries = {};
+      for (var c = 0; c < chunks; c++) {
+        entries[prefix + c] = text.substring(c * CACHE_CHUNK, (c + 1) * CACHE_CHUNK);
+      }
+      entries[prefix + 'n'] = String(chunks);
+      cache.putAll(entries, CACHE_SECONDS);
+    }
+  } catch (e2) {
+    // 캐시 저장 실패는 무시(다음 요청에서 다시 읽으면 됨)
+  }
+  return rows;
+}
+
+var CACHED_SHEETS = [SHEET_SELLER, SHEET_PROPOSAL, SHEET_LOG, SHEET_USERS,
+                     SHEET_DELETED, SHEET_TASKS, SHEET_TASKS_DONE];
+
+function invalidateAllCaches() {
+  var keys = CACHED_SHEETS.map(function (n) { return 'VER:' + n; });
+  try { CacheService.getScriptCache().removeAll(keys); } catch (e) {}
+  _memRows = {};
+  _memFromCache = {};
+}
+
+// 시트를 변경하는 action 목록. 이 요청이 끝나면 캐시를 버린다.
+var MUTATING_ACTIONS = {
+  commit: true, recordForSeller: true, logVisit: true, saveSellerFields: true,
+  deleteVisitDay: true, updateProposal: true, updateSellerTitle: true,
+  updateSellerName: true, addNewSeller: true, deleteSeller: true,
+  login: true, addTask: true, editTask: true, completeTask: true,
+  moveTask: true, setTaskAlarm: true, deleteCompletedTask: true
+};
+
 // 일회성 유틸: 판매자정보 시트 K열(영업대상 체크박스) 308행부터 마지막행까지 체크박스로 채움.
 // 셀 크기(행높이/열너비)는 건드리지 않고 데이터 유효성(체크박스)만 적용.
 function fillCheckboxesK308() {
@@ -119,11 +235,19 @@ function doGet(e) {
       result = handleDashboard();
     } else if (action === 'dashboardBank') {
       result = handleDashboardBank(e.parameter.bank || '');
+    } else if (action === 'bootstrap') {
+      result = handleBootstrap();
     } else {
       result = { error: 'unknown action' };
     }
   } catch (err) {
     result = { error: err.message };
+  }
+
+  // 시트를 바꾼 요청이면, 변경 내용을 확실히 반영시킨 뒤 캐시를 버린다.
+  if (MUTATING_ACTIONS[action]) {
+    try { SpreadsheetApp.flush(); } catch (e2) {}
+    invalidateAllCaches();
   }
 
   var body = callback ? callback + '(' + JSON.stringify(result) + ')' : JSON.stringify(result);
@@ -505,8 +629,7 @@ function buildBranchSummary(qBank, qBranch, qSeller) {
     };
   }
 
-  var sellerSheet = getSS().getSheetByName(SHEET_SELLER);
-  var sellerRows = sellerSheet.getDataRange().getValues();
+  var sellerRows = readRowsCached(SHEET_SELLER);
   var bankCol = fillMergedColumn(sellerRows, 1);
   var branchCol = fillMergedColumn(sellerRows, 2);
 
@@ -590,14 +713,15 @@ function buildSpokenSellerSummary(sellersStructured) {
 
 // 지점 조회 카드의 은행/지점 드롭다운을 채우기 위한, 시트에 등록된 모든 은행+지점 목록(중복 제거)
 // 담당자 이메일이 설정된 행은 본인 것만, 미설정 행은 모두에게 표시(마이그레이션 호환)
+// 각 지점마다 판매자 목록(sellers)까지 함께 담아 보낸다. 프런트가 이 목록만으로 판매자 드롭다운을
+// 채울 수 있어서, 은행/지점을 고를 때마다 listSellers를 따로 호출하지 않아도 된다.
 function handleListBranches() {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_SELLER);
   var bankCol = fillMergedColumn(rows, 1);
   var branchCol = fillMergedColumn(rows, 2);
 
-  var seen = {};
+  var byKey = {};
   var branches = [];
   for (var i = 1; i < rows.length; i++) {
     var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
@@ -606,9 +730,12 @@ function handleListBranches() {
     var branch = String(branchCol[i] || '').trim();
     if (!bank || !branch) continue;
     var key = normalizeText(bank) + '|' + normalizeText(branch);
-    if (seen[key]) continue;
-    seen[key] = true;
-    branches.push({ 은행명: bank, 지점명: branch });
+    if (!byKey[key]) {
+      byKey[key] = { 은행명: bank, 지점명: branch, sellers: [] };
+      branches.push(byKey[key]);
+    }
+    var name = String(rows[i][3] || '').trim();
+    if (name) byKey[key].sellers.push({ 판매자명: name, 직책: String(rows[i][4] || '').trim() });
   }
 
   branches.sort(function (a, b) {
@@ -620,10 +747,10 @@ function handleListBranches() {
 }
 
 // 은행+지점을 선택했을 때, 그 지점에 등록된 판매자 목록(드롭다운용)
+// (프런트는 보통 listBranches의 sellers를 그대로 쓰므로, 이 액션은 예비용으로만 남겨둔다)
 function handleListSellers(bank, branch) {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_SELLER);
   var group = findMatchingGroup(rows, bank, branch);
   if (email) {
     group = group.filter(function (idx) {
@@ -677,8 +804,7 @@ function handleLogVisit(bank, branch, date, visitType) {
     return { ok: false, message: '은행과 지점을 선택해주세요.' };
   }
   var email = getCurrentUserEmail();
-  var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_SELLER);
   var resolvedBranch = resolveBranchName(rows, bank, branch);
   var dateLabel = resolveDateLabel(date);
   var logSheet = getSS().getSheetByName(SHEET_LOG);
@@ -690,8 +816,7 @@ function handleLogVisit(bank, branch, date, visitType) {
 function handleGetSellerInfo(bank, branch, seller) {
   if (!String(seller || '').trim()) return { ok: true, seller: null };
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_SELLER);
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
   if (rowIdx === -1) return { ok: true, seller: null };
   var rowEmail = String(rows[rowIdx][11] || '').trim().toLowerCase();
@@ -716,7 +841,7 @@ function handleUpdateSellerTitle(bank, branch, seller, newTitle) {
   if (!bank || !branch || !seller) return { ok: false, message: '은행, 지점, 판매자를 모두 선택해주세요.' };
   var email = getCurrentUserEmail().toLowerCase();
   var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_SELLER);
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
   if (rowIdx === -1) return { ok: false, message: '판매자를 찾을 수 없습니다.' };
   var rowEmail = String(rows[rowIdx][11] || '').trim().toLowerCase();
@@ -734,7 +859,7 @@ function handleUpdateSellerName(bank, branch, seller, newName) {
   var email = getCurrentUserEmail().toLowerCase();
   var ss = getSS();
   var sheet = ss.getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_SELLER);
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
   if (rowIdx === -1) return { ok: false, message: '판매자를 찾을 수 없습니다.' };
   var rowEmail = String(rows[rowIdx][11] || '').trim().toLowerCase();
@@ -803,7 +928,7 @@ function handleAddNewSeller(bank, branch, sellerName, title) {
 
   var email = getCurrentUserEmail();
   var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_SELLER);
   var resolvedBranch = resolveBranchName(rows, bank, branch);
 
   // 이미 같은 은행+지점+이름의 판매자가 있으면 중복 추가 방지
@@ -827,7 +952,7 @@ function handleDeleteSeller(bank, branch, seller) {
   var email = getCurrentUserEmail().toLowerCase();
   var ss = getSS();
   var sheet = ss.getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_SELLER);
   var rowIdx = findBestSellerRow(rows, bank, branch, seller, '');
   if (rowIdx === -1) return { ok: false, message: '판매자를 찾을 수 없습니다.' };
   var rowEmail = String(rows[rowIdx][11] || '').trim().toLowerCase();
@@ -900,7 +1025,7 @@ function handleFindArchivedSellers(bank, sellerName, title) {
   // 1) 삭제된 판매자 시트 탐색
   var delSheet = ss.getSheetByName(SHEET_DELETED);
   if (delSheet) {
-    var delRows = delSheet.getDataRange().getValues();
+    var delRows = readRowsCached(SHEET_DELETED);
     for (var i = 1; i < delRows.length; i++) {
       var r = delRows[i];
       if (normalizeText(String(r[1] || '')) !== normBank) continue;
@@ -910,8 +1035,7 @@ function handleFindArchivedSellers(bank, sellerName, title) {
   }
 
   // 2) 판매자정보 시트에서 다른 사용자 행 탐색
-  var selSheet = ss.getSheetByName(SHEET_SELLER);
-  var selRows = selSheet.getDataRange().getValues();
+  var selRows = readRowsCached(SHEET_SELLER);
   for (var j = 1; j < selRows.length; j++) {
     var sr = selRows[j];
     var srEmail = String(sr[11] || '').trim().toLowerCase();
@@ -935,8 +1059,7 @@ function handleSaveSellerFields(data) {
   }
 
   var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var logSheet = getSS().getSheetByName(SHEET_LOG);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_SELLER);
   var todayLabel = resolveDateLabel(data.date);
   var resolvedBranch = resolveBranchName(rows, bank, branch);
   var rowIdx = findBestSellerRow(rows, bank, resolvedBranch, seller, '');
@@ -977,8 +1100,7 @@ function handleSaveSellerFields(data) {
 // 달력에서 특정 날짜(YYYY-MM-DD)를 누르면 그날 방문한 점포 목록을 보여줌
 function handleCalendarDay(dateStr) {
   var email = getCurrentUserEmail().toLowerCase();
-  var logSheet = getSS().getSheetByName(SHEET_LOG);
-  var logRows = logSheet.getDataRange().getValues();
+  var logRows = readRowsCached(SHEET_LOG);
   var matches = logRows.slice(1).filter(function (r) {
     if (String(r[0] || '').indexOf(dateStr) !== 0) return false;
     var rowEmail = String(r[5] || '').trim().toLowerCase();
@@ -1022,7 +1144,7 @@ function handleDeleteVisitDay(dateStr, bank, branch) {
   var normBank = normalizeText(bank);
   var normBranch = normalizeText(branch);
   var logSheet = getSS().getSheetByName(SHEET_LOG);
-  var rows = logSheet.getDataRange().getValues();
+  var rows = readRows(SHEET_LOG);
 
   var rowNumsToDelete = [];
   for (var i = 1; i < rows.length; i++) {
@@ -1047,8 +1169,7 @@ function handleDeleteVisitDay(dateStr, bank, branch) {
 // 판매자정보 시트 K열(영업대상, 체크박스)에 TRUE로 표시된 지점만 모수로 집계함
 function handleDashboard() {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_SELLER);
   var bankCol = fillMergedColumn(rows, 1);
   var branchCol = fillMergedColumn(rows, 2);
 
@@ -1069,8 +1190,7 @@ function handleDashboard() {
   }
 
   var thisMonth = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
-  var logSheet = getSS().getSheetByName(SHEET_LOG);
-  var logRows = logSheet.getDataRange().getValues();
+  var logRows = readRowsCached(SHEET_LOG);
   var visitedByBank = {}; // bank -> Set(branchKey) 이번달 방문
   for (var j = 1; j < logRows.length; j++) {
     var logDate = String(logRows[j][0] || '');
@@ -1085,16 +1205,23 @@ function handleDashboard() {
     visitedByBank[lBank][lKey] = true;
   }
 
+  // 은행별 지점 상세(방문/미방문)까지 한 번에 담아 보낸다. 대시보드에서 은행을 눌렀을 때
+  // dashboardBank를 은행마다 다시 호출하지 않아도 되도록(요청 N번 -> 0번).
   var banks = Object.keys(targetBranchesByBank);
   var result = banks.map(function (bank) {
     var targetKeys = Object.keys(targetBranchesByBank[bank]);
-    var visitedKeys = visitedByBank[bank] ? Object.keys(visitedByBank[bank]) : [];
-    var visitedTargetCount = targetKeys.filter(function (k) { return visitedByBank[bank] && visitedByBank[bank][k]; }).length;
+    var visitedTargetCount = 0;
+    var branchList = targetKeys.map(function (k) {
+      var visited = !!(visitedByBank[bank] && visitedByBank[bank][k]);
+      if (visited) visitedTargetCount++;
+      return { 지점명: allBranchLabelByKey[k], visited: visited };
+    }).sort(function (a, b) { return a.지점명.localeCompare(b.지점명, 'ko'); });
     return {
       은행명: bank,
       모수: targetKeys.length,
       당월방문: visitedTargetCount,
-      미방문: targetKeys.length - visitedTargetCount
+      미방문: targetKeys.length - visitedTargetCount,
+      branches: branchList
     };
   });
 
@@ -1105,8 +1232,7 @@ function handleDashboard() {
 function handleDashboardBank(bankName) {
   var email = getCurrentUserEmail().toLowerCase();
   var normBank = normalizeText(bankName);
-  var sheet = getSS().getSheetByName(SHEET_SELLER);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_SELLER);
   var bankCol = fillMergedColumn(rows, 1);
   var branchCol = fillMergedColumn(rows, 2);
 
@@ -1123,8 +1249,7 @@ function handleDashboardBank(bankName) {
   }
 
   var thisMonth = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
-  var logSheet = getSS().getSheetByName(SHEET_LOG);
-  var logRows = logSheet.getDataRange().getValues();
+  var logRows = readRowsCached(SHEET_LOG);
   var visited = {}; // normBranch -> true (이번 달 방문)
   for (var j = 1; j < logRows.length; j++) {
     var logDate = String(logRows[j][0] || '');
@@ -1146,8 +1271,7 @@ function handleDashboardBank(bankName) {
 
 // 제안서 요청 시트 전체를 화면에서 실시간으로 보기 위한 목록
 function handleListProposals() {
-  var sheet = getSS().getSheetByName(SHEET_PROPOSAL);
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_PROPOSAL);
   var header = rows[0];
   var items = [];
   for (var i = 1; i < rows.length; i++) {
@@ -1165,6 +1289,21 @@ function handleUpdateProposal(rowIndex, data) {
   var values = header.map(function (h) { return data[h] !== undefined ? data[h] : ''; });
   sheet.getRange(rowIndex, 1, 1, header.length).setValues([values]);
   return { ok: true };
+}
+
+// 앱을 처음 열 때 필요한 것(내 정보 / 은행·지점·판매자 / 업무 / 대시보드)을 한 요청으로 모아서 준다.
+// 예전에는 요청 4번이 각각 시트를 통째로 다시 읽어서 첫 화면이 특히 느렸다.
+function handleBootstrap() {
+  function safe(fn) {
+    try { return fn(); } catch (e) { return { ok: false, error: e.message }; }
+  }
+  return {
+    ok: true,
+    me: safe(handleGetMe),
+    branches: safe(handleListBranches),
+    tasks: safe(handleListTasks),
+    dashboard: safe(handleDashboard)
+  };
 }
 
 function sanitizeText(text) {
@@ -1242,7 +1381,7 @@ function handleLogin(email, pin) {
   pin = String(pin || '').trim();
   var usersSheet = getSS().getSheetByName(SHEET_USERS);
   if (!usersSheet) return { ok: false, error: 'no_users_sheet' };
-  var rows = usersSheet.getDataRange().getValues();
+  var rows = readRows(SHEET_USERS);
   var idx = _findUserRowByEmail(rows, email);
   if (idx < 0) return { ok: false, error: 'not_registered' };
   var name = String(rows[idx][0] || '').trim();
@@ -1260,9 +1399,10 @@ function handleLogin(email, pin) {
 
 // 첫 접속 시 사용자가 본인 이름을 고를 수 있도록 등록된 사용자 목록을 반환
 function handleListUsers() {
-  var usersSheet = getSS().getSheetByName(SHEET_USERS);
-  if (!usersSheet) return { ok: false, error: 'no_users_sheet' };
-  var rows = usersSheet.getDataRange().getValues();
+  // 빈 결과는 캐시하지 않으므로, 행이 0개면 시트 자체가 없는 경우다.
+  // (시트 존재 확인을 위해 매번 스프레드시트를 열지 않아도 된다)
+  var rows = readRowsCached(SHEET_USERS);
+  if (rows.length === 0) return { ok: false, error: 'no_users_sheet' };
   var users = [];
   for (var i = 1; i < rows.length; i++) {
     var name = String(rows[i][0] || '').trim();
@@ -1275,9 +1415,8 @@ function handleListUsers() {
 function handleGetMe() {
   var email = getCurrentUserEmail();
   if (!email) return { ok: false, error: 'login_required' };
-  var usersSheet = getSS().getSheetByName(SHEET_USERS);
-  if (!usersSheet) return { ok: false, error: 'no_users_sheet' };
-  var rows = usersSheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_USERS);
+  if (rows.length === 0) return { ok: false, error: 'no_users_sheet' };
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][1] || '').trim().toLowerCase() === email.toLowerCase()) {
       return { ok: true, name: String(rows[i][0] || '').trim(), email: email };
@@ -1320,8 +1459,10 @@ function taskRowToObj(r) {
 // 내 업무 목록(우선순위 순)
 function handleListTasks() {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = getTasksSheet();
-  var rows = sheet.getDataRange().getValues();
+  // 시트가 아직 없으면 readRowsCached가 빈 배열을 주므로, 그때만 시트를 만든다.
+  // (매번 getTasksSheet를 부르면 캐시가 있어도 스프레드시트를 여느라 느려진다)
+  var rows = readRowsCached(SHEET_TASKS);
+  if (rows.length === 0) { getTasksSheet(); rows = readRows(SHEET_TASKS); }
   var tasks = [];
   for (var i = 1; i < rows.length; i++) {
     var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
@@ -1337,7 +1478,7 @@ function handleListTasks() {
 function handleAddTask(data) {
   var email = getCurrentUserEmail();
   var sheet = getTasksSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_TASKS);
   var maxOrder = 0;
   for (var i = 1; i < rows.length; i++) {
     var o = Number(rows[i][1]) || 0;
@@ -1364,7 +1505,7 @@ function handleAddTask(data) {
 function handleEditTask(id, data) {
   if (!id) return { ok: false, message: 'id가 없습니다.' };
   var sheet = getTasksSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_TASKS);
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === id) {
       var targetType = String(data.targetType || '거래처') === '직접입력' ? '직접입력' : '거래처';
@@ -1388,7 +1529,7 @@ function handleEditTask(id, data) {
 function handleCompleteTask(id) {
   if (!id) return { ok: false, message: 'id가 없습니다.' };
   var sheet = getTasksSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_TASKS);
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === id) {
       var r = rows[i];
@@ -1407,7 +1548,7 @@ function handleMoveTask(id, direction) {
   if (!id) return { ok: false, message: 'id가 없습니다.' };
   var email = getCurrentUserEmail().toLowerCase();
   var sheet = getTasksSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_TASKS);
 
   var mine = []; // { rowNum, id, order }
   for (var i = 1; i < rows.length; i++) {
@@ -1433,7 +1574,7 @@ function handleMoveTask(id, direction) {
 function handleSetTaskAlarm(id, alarm) {
   if (!id) return { ok: false, message: 'id가 없습니다.' };
   var sheet = getTasksSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_TASKS);
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === id) {
       sheet.getRange(i + 1, 11).setValue(alarm || '');
@@ -1446,8 +1587,8 @@ function handleSetTaskAlarm(id, alarm) {
 // 완료된 업무 목록(최근 처리 순)
 function handleListCompletedTasks() {
   var email = getCurrentUserEmail().toLowerCase();
-  var sheet = getTasksDoneSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRowsCached(SHEET_TASKS_DONE);
+  if (rows.length === 0) { getTasksDoneSheet(); rows = readRows(SHEET_TASKS_DONE); }
   var tasks = [];
   for (var i = 1; i < rows.length; i++) {
     var rowEmail = String(rows[i][10] || '').trim().toLowerCase();
@@ -1469,7 +1610,7 @@ function handleListCompletedTasks() {
 function handleDeleteCompletedTask(id) {
   if (!id) return { ok: false, message: 'id가 없습니다.' };
   var sheet = getTasksDoneSheet();
-  var rows = sheet.getDataRange().getValues();
+  var rows = readRows(SHEET_TASKS_DONE);
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === id) {
       sheet.deleteRow(i + 1);

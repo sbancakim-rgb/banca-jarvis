@@ -494,25 +494,46 @@
     // 모든 요청에 토큰을 실어보냄. 백엔드가 토큰을 검증해 신원을 확정한다.
     function getStoredToken() { return (localStorage.getItem('bancaAuthToken') || '').trim(); }
     function setStoredToken(v) { localStorage.setItem('bancaAuthToken', v); }
+    function setStoredName(v) { if (v) localStorage.setItem('bancaUserName', v); }
     function clearStoredToken() {
       localStorage.removeItem('bancaAuthToken');
+      localStorage.removeItem('bancaUserName');
       localStorage.removeItem('bancaUserEmail'); // 구버전 잔재 정리
+    }
+
+    // 토큰을 지워야 하는 경우는 "서버가 이 토큰은 못 쓴다고 확실히 답한 경우"뿐이다.
+    // 통신 실패/시간 초과(__net)는 로그인 상태와 무관하므로 절대 로그아웃시키지 않는다.
+    const AUTH_FAILURES = new Set(['login_required', 'not_registered', 'invalid_token']);
+
+    function applyMeResult(data) {
+      if (!data) return;
+      if (data.ok) {
+        setStoredName(data.name);
+        document.getElementById('userBadge').textContent = data.name + ' 님';
+        return;
+      }
+      if (data.__net || data.error === 'no_users_sheet') {
+        // 일시적 통신 문제이거나 다중사용자 미설정 환경 → 그대로 진행 (로그아웃 금지)
+        return;
+      }
+      if (AUTH_FAILURES.has(data.error)) {
+        clearStoredToken();
+        showUserPicker(data.error === 'not_registered'
+          ? '등록되지 않은 계정입니다. 다시 로그인하세요.' : '다시 로그인해주세요.');
+      }
+      // 그 밖의 서버 오류는 일시적일 수 있으므로 로그인 상태를 유지한다.
+    }
+
+    // 저장해 둔 이름을 먼저 보여줘서, 서버 응답을 기다리는 동안 화면이 비어 보이지 않게 한다.
+    function showCachedUserName() {
+      const cached = localStorage.getItem('bancaUserName');
+      if (cached && getStoredToken()) document.getElementById('userBadge').textContent = cached + ' 님';
     }
 
     function initUser() {
       if (!getStoredToken()) { showUserPicker(); return; }
-      jsonpRequest(getUrl(), { action: 'getMe' }, data => {
-        if (data.ok) {
-          document.getElementById('userBadge').textContent = data.name + ' 님';
-        } else if (data.error === 'no_users_sheet') {
-          // 사용자목록 시트 없음 = 아직 다중사용자 설정 전. 오류 없이 진행.
-        } else {
-          // 토큰 만료/무효/미등록 → 다시 로그인
-          clearStoredToken();
-          showUserPicker(data.error === 'not_registered'
-            ? '등록되지 않은 계정입니다. 다시 로그인하세요.' : '다시 로그인해주세요.');
-        }
-      });
+      showCachedUserName();
+      jsonpRequest(getUrl(), { action: 'getMe' }, applyMeResult);
     }
 
     function showUserPicker(msg) {
@@ -545,12 +566,13 @@
           msgEl.style.color = 'var(--danger,#dc2626)';
           if (res.ok) {
             setStoredToken(res.token);
+            setStoredName(res.name);
             pinInput.value = '';
             overlay.style.display = 'none';
             if (res.firstTime) {
               alert('PIN이 설정되었습니다. 다음부터는 이 PIN으로 로그인하세요.');
             }
-            initUser();
+            boot(); // 로그인 직후에도 첫 화면 데이터를 한 번에 불러온다
           } else if (res.error === 'wrong_pin') {
             msgEl.textContent = 'PIN이 올바르지 않습니다.';
           } else if (res.error === 'set_pin') {
@@ -591,9 +613,22 @@
     }
 
     let jsonpCounter = 0;
-    function jsonpRequest(baseUrl, params, onData) {
+    // Claude 호출이 들어가는 액션은 응답이 오래 걸리므로 대기 시간을 넉넉히 준다.
+    const SLOW_ACTIONS = new Set(['record', 'reparse', 'commit', 'query', 'recordForSeller']);
+
+    // 네트워크 오류/시간 초과는 한 번 자동 재시도하고, 그래도 실패하면 __net 표시를 달아
+    // "서버가 거절함"과 구분되게 한다. (이 구분이 없어서 잠깐 느릴 때마다 로그아웃됐다)
+    function jsonpRequest(baseUrl, params, onData, attempt) {
+      attempt = attempt || 0;
       const cbName = 'jsonpCb' + (jsonpCounter++);
-      const timeout = setTimeout(() => { cleanup(); onData({ error: '응답 시간 초과' }); }, 20000);
+      const timeoutMs = SLOW_ACTIONS.has(params.action) ? 90000 : 40000;
+
+      function fail(message) {
+        if (attempt < 1) { jsonpRequest(baseUrl, params, onData, attempt + 1); return; }
+        onData({ error: message, __net: true });
+      }
+
+      const timeout = setTimeout(() => { cleanup(); fail('응답 시간 초과'); }, timeoutMs);
       function cleanup() { clearTimeout(timeout); delete window[cbName]; if (script.parentNode) script.remove(); }
       window[cbName] = data => { cleanup(); onData(data); };
       // 저장된 서명 토큰을 모든 요청에 자동 첨부 (백엔드가 검증해 신원 확정)
@@ -602,7 +637,7 @@
       const qs = new URLSearchParams({ ...withAuth, callback: cbName }).toString();
       const script = document.createElement('script');
       script.src = baseUrl + (baseUrl.includes('?') ? '&' : '?') + qs;
-      script.onerror = () => { cleanup(); onData({ error: '요청 실패 (URL을 확인하세요)' }); };
+      script.onerror = () => { cleanup(); fail('요청 실패 (네트워크 또는 URL 확인)'); };
       document.body.appendChild(script);
     }
 
@@ -644,19 +679,21 @@
     let branchListData = [];
 
     function makePicker(bankSel, branchSel, sellerSel, sellerPlaceholder, onSellerChange) {
+      // 판매자 목록은 listBranches 응답(branchListData)에 이미 들어 있으므로 서버를 다시 부르지 않는다.
+      // (예전에는 은행/지점을 바꿀 때마다 listSellers 요청이 한 번씩 더 나가서 드롭다운이 느렸다)
       function updateSellers(done) {
         if (!sellerSel) { if (done) done(); return; }
         const bank = bankSel.value, branch = branchSel.value;
         sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>`;
-        const url = getUrl();
-        if (!bank || !branch || !url) { if (done) done(); return; }
-        jsonpRequest(url, { action: 'listSellers', bank, branch }, data => {
-          if (!data.error && data.sellers) {
+        if (bank && branch) {
+          const entry = branchListData.find(b => b.은행명 === bank && b.지점명 === branch);
+          const sellers = (entry && entry.sellers) || [];
+          if (sellers.length) {
             sellerSel.innerHTML = `<option value="">${sellerPlaceholder}</option>` +
-              data.sellers.map(s => `<option value="${escapeHtml(s.판매자명)}">${escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))}</option>`).join('');
+              sellers.map(s => `<option value="${escapeHtml(s.판매자명)}">${escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))}</option>`).join('');
           }
-          if (done) done();
-        });
+        }
+        if (done) done();
       }
       function updateBranches() {
         const bank = bankSel.value;
@@ -818,17 +855,44 @@
       return val.endsWith(tag) ? val : val + tag;
     }
 
+    function applyBranchList(data) {
+      if (!data || data.error || !data.branches) return;
+      branchListData = data.branches;
+      visitPicker.populate();
+      sellerPicker.populate();
+      taskPicker.populate();
+      taskEditPicker.populate();
+    }
+
     function loadBranchList() {
       const url = getUrl();
       if (!url) return;
-      jsonpRequest(url, { action: 'listBranches' }, data => {
-        if (data.error || !data.branches) return;
-        branchListData = data.branches;
-        visitPicker.populate();
-        sellerPicker.populate();
-        taskPicker.populate();
-        taskEditPicker.populate();
-      });
+      jsonpRequest(url, { action: 'listBranches' }, applyBranchList);
+    }
+
+    // 판매자 드롭다운은 branchListData(클라이언트 보관)에서 바로 만들어지므로,
+    // 판매자를 추가/삭제/이름변경했을 때 이 목록도 같이 고쳐줘야 화면이 어긋나지 않는다.
+    function localSellers(bank, branch) {
+      const entry = branchListData.find(b => b.은행명 === bank && b.지점명 === branch);
+      if (!entry) return null;
+      if (!entry.sellers) entry.sellers = [];
+      return entry.sellers;
+    }
+    function localAddSeller(bank, branch, 판매자명, 직책) {
+      const list = localSellers(bank, branch);
+      if (list && !list.some(s => s.판매자명 === 판매자명)) list.push({ 판매자명, 직책: 직책 || '' });
+    }
+    function localRemoveSeller(bank, branch, 판매자명) {
+      const list = localSellers(bank, branch);
+      if (!list) return;
+      const i = list.findIndex(s => s.판매자명 === 판매자명);
+      if (i >= 0) list.splice(i, 1);
+    }
+    function localUpdateSeller(bank, branch, 판매자명, patch) {
+      const list = localSellers(bank, branch);
+      if (!list) return;
+      const s = list.find(x => x.판매자명 === 판매자명);
+      if (s) Object.assign(s, patch);
     }
 
     // ─── ① 방문 입력 ─────────────────────────────────────────────────────────
@@ -915,6 +979,7 @@
       jsonpRequest(url, { action: 'updateSellerTitle', bank, branch, seller, newTitle }, data => {
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
         showStatus(statusEl, '✓ 직책이 ' + data.newTitle + ' 으로 수정되었습니다.');
+        localUpdateSeller(bank, branch, seller, { 직책: data.newTitle });
         document.getElementById('sellerMeta').textContent =
           bank + ' ' + branch + ' · ' + seller + ' ' + data.newTitle;
         // 드롭다운 옵션 텍스트도 업데이트
@@ -936,6 +1001,7 @@
       jsonpRequest(url, { action: 'updateSellerName', bank, branch, seller, newName }, data => {
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
         showStatus(statusEl, `✓ "${data.oldName}" → "${data.newName}" 교체 완료. 필드가 초기화되었습니다.`);
+        localUpdateSeller(bank, branch, data.oldName, { 판매자명: data.newName, 직책: '' });
         // 필드 초기화
         FIELD_KEYS.forEach(k => {
           const ta = document.getElementById('field_' + k);
@@ -963,6 +1029,7 @@
       showStatus(statusEl, '삭제 중...');
       jsonpRequest(url, { action: 'deleteSeller', bank, branch, seller }, data => {
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        localRemoveSeller(bank, branch, seller);
         document.getElementById('sellerFields').style.display = 'none';
         sellerPicker.setBranch(branch); // 판매자 드롭다운 새로고침
       });
@@ -981,6 +1048,7 @@
       jsonpRequest(url, { action: 'addNewSeller', bank, branch, sellerName, title }, data => {
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
         showStatus(statusEl, '✓ 추가 완료');
+        localAddSeller(bank, branch, sellerName, title);
         document.getElementById('newSellerNameInput').value = '';
         document.getElementById('newSellerTitleInput').value = '';
         // 드롭다운 새로고침 후 방금 추가한 판매자를 자동 선택 →
@@ -1013,8 +1081,6 @@
         });
       });
     };
-
-    loadBranchList();
 
     // ─── 방문/판매자 은행·지점 연동 ─────────────────────────────────────────
     let _syncing = false;
@@ -1198,25 +1264,32 @@
       wrap.appendChild(stats);
       const detail = document.createElement('div'); detail.className = 'branch-detail'; detail.style.display = 'none';
       wrap.appendChild(detail);
+      function renderBranchChips(list) {
+        detail.innerHTML = '';
+        if (!list || list.length === 0) { detail.textContent = '지점 정보 없음'; return; }
+        list.forEach(br => {
+          const chip = document.createElement('span');
+          chip.className = 'branch-chip '+(br.visited?'visited':'unvisited');
+          chip.textContent = br.지점명;
+          detail.appendChild(chip);
+        });
+      }
+
+      // 지점 상세는 dashboard 응답에 이미 들어 있어서 즉시 펼쳐진다.
+      // (예전에는 은행을 누를 때마다 dashboardBank 요청이 한 번씩 더 나갔다)
       let loaded = false;
       name.onclick = () => {
         if (detail.style.display !== 'none') { detail.style.display = 'none'; return; }
         detail.style.display = 'flex';
         if (loaded) return;
         loaded = true;
+        if (b.branches) { renderBranchChips(b.branches); return; }
         detail.textContent = '불러오는 중...';
         const url = getUrl();
         if (!url) { detail.textContent = 'URL을 먼저 입력하세요.'; return; }
         jsonpRequest(url, { action: 'dashboardBank', bank: b.은행명 }, data => {
-          detail.innerHTML = '';
-          if (data.error) { detail.textContent = '오류: '+data.error; return; }
-          if (!data.branches||data.branches.length===0) { detail.textContent = '지점 정보 없음'; return; }
-          data.branches.forEach(br => {
-            const chip = document.createElement('span');
-            chip.className = 'branch-chip '+(br.visited?'visited':'unvisited');
-            chip.textContent = br.지점명;
-            detail.appendChild(chip);
-          });
+          if (data.error) { detail.textContent = '오류: '+data.error; loaded = false; return; }
+          renderBranchChips(data.branches);
         });
       };
       return wrap;
@@ -1327,13 +1400,15 @@
       });
     }
 
+    function applyTasks(data) {
+      if (!data || data.error || !data.tasks) return;
+      renderTasks(data.tasks);
+    }
+
     function loadTasks() {
       const url = getUrl();
       if (!url) return;
-      jsonpRequest(url, { action: 'listTasks' }, data => {
-        if (data.error || !data.tasks) return;
-        renderTasks(data.tasks);
-      });
+      jsonpRequest(url, { action: 'listTasks' }, applyTasks);
     }
 
     function completeTask(id) {
@@ -1531,20 +1606,21 @@
       });
     });
 
-    loadTasks();
+    function applyDashboard(data) {
+      if (!data) return;
+      if (data.error) { dashboardList.textContent = '오류: ' + data.error; return; }
+      dashboardList.innerHTML = '';
+      if (!data.banks || data.banks.length === 0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
+      renderDashboardSummary(data.banks);
+      data.banks.forEach(b => dashboardList.appendChild(buildDashboardBank(b)));
+    }
 
     function loadDashboard() {
       const url = getUrl();
       if (!url) { dashboardList.textContent = '연결 설정에서 URL을 먼저 입력하세요.'; return; }
       dashboardSummary.innerHTML = '';
       dashboardList.textContent = '불러오는 중...';
-      jsonpRequest(url, { action: 'dashboard' }, data => {
-        if (data.error) { dashboardList.textContent = '오류: '+data.error; return; }
-        dashboardList.innerHTML = '';
-        if (!data.banks||data.banks.length===0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
-        renderDashboardSummary(data.banks);
-        data.banks.forEach(b => dashboardList.appendChild(buildDashboardBank(b)));
-      });
+      jsonpRequest(url, { action: 'dashboard' }, applyDashboard);
     }
 
     const toggleDashboardListBtn = document.getElementById('toggleDashboardListBtn');
@@ -1554,8 +1630,39 @@
       toggleDashboardListBtn.textContent = hidden ? '은행별 방문 현황 숨기기' : '은행별 방문 현황 보기';
     };
     document.getElementById('refreshDashboardBtn').onclick = loadDashboard;
-    loadDashboard();
-    initUser();
+
+    // ─── 첫 화면: 요청 1번으로 내 정보 + 지점목록 + 업무 + 대시보드를 한꺼번에 ────────
+    // 예전에는 getMe / listBranches / listTasks / dashboard 를 각각 따로 불러서
+    // 앱을 열 때마다 서버 왕복이 4번 일어났다.
+    function boot() {
+      const url = getUrl();
+      if (!url) { dashboardList.textContent = '연결 설정에서 URL을 먼저 입력하세요.'; return; }
+      // 토큰이 없으면 로그인 창은 띄우되, 데이터 로딩은 계속한다
+      // (사용자목록 시트가 없는 1인 사용 환경에서는 로그인 창이 스스로 닫힌다)
+      if (!getStoredToken()) showUserPicker();
+
+      showCachedUserName();
+      dashboardList.textContent = '불러오는 중...';
+
+      jsonpRequest(url, { action: 'bootstrap' }, data => {
+        if (data && data.__net) {
+          // 통신 실패(이미 한 번 재시도한 뒤). 로그인 상태는 건드리지 않는다.
+          dashboardList.textContent = '연결이 원활하지 않습니다. 새로고침을 눌러 다시 시도하세요.';
+          return;
+        }
+        if (!data || data.error) {
+          // 구버전 백엔드(bootstrap 미지원 등)에서는 예전 방식으로 되돌려 동작을 보장한다.
+          initUser(); loadBranchList(); loadTasks(); loadDashboard();
+          return;
+        }
+        applyMeResult(data.me);
+        applyBranchList(data.branches);
+        applyTasks(data.tasks);
+        applyDashboard(data.dashboard);
+      });
+    }
+
+    boot();
   </script>
 </body>
 </html>
