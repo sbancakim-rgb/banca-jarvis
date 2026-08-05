@@ -1331,12 +1331,13 @@ function branchKey(bank, branch) {
   return normalizeText(bank) + '|' + normalizeText(branch);
 }
 
-// 시트 중간에 머리글이 한 번 더 들어가 있으면("은행명 | 지점명" 행) 그게 지점 하나로 잡혀
-// 드롭다운과 지도에 유령 지점이 나타난다. 0행과 값이 똑같은 행은 지점으로 세지 않는다.
+// 판매자정보 시트는 1행이 비어 있고 2행이 실제 머리글이다. 반복문이 i=1부터 도는 탓에
+// 그 머리글이 지점 하나로 잡혀 "은행명 | 지점명" 유령 지점이 목록과 지도에 나타났다.
+// 머리글 위치를 가정하지 말고 값 자체로 판정한다 (실제로 "은행명"이라는 은행은 없다).
 function isHeaderEchoRow(rows, i) {
-  if (i === 0 || !rows.length) return true;
-  return String(rows[i][1] || '') === String(rows[0][1] || '') &&
-         String(rows[i][2] || '') === String(rows[0][2] || '');
+  if (i === 0) return true;
+  return String(rows[i][1] || '').trim() === '은행명' &&
+         String(rows[i][2] || '').trim() === '지점명';
 }
 
 // "구월북지점" / "구월북" / "만수6동(점)" 처럼 접미어만 다른 표기를 같은 곳으로 보기 위해
