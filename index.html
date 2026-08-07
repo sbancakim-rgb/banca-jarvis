@@ -233,9 +233,9 @@
   }
   .map-legend span { display: inline-flex; align-items: center; gap: 4px; }
   .map-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-  .map-dot.unvisited { background: #fee2e2; border: 2px solid #b91c1c; }
-  .map-dot.called { background: transparent; border: 2px dashed #b91c1c; }
-  .map-dot.visited { background: #dbeafe; border: 1px solid #93c5fd; }
+  .map-dot.unvisited { background: #fde047; border: 2px solid #b91c1c; }
+  .map-dot.called { background: #fde047; border: 2px dashed #b91c1c; }
+  .map-dot.visited { background: #fde047; border: 2px solid #1d4ed8; }
   .map-note { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; }
   /* 마커 옆 지점 이름표. 확대했을 때 화면에 보이는 것만 붙인다 */
   .map-label {
@@ -348,7 +348,7 @@
       <div id="mapWrap" class="map-wrap" style="display:none;">
         <div class="map-controls">
           <select id="mapBankSelect"><option value="">전체 은행</option></select>
-          <button id="mapUnvisitedBtn" class="task-toggle-btn active" style="flex:0 0 auto;padding:9px 12px;">미방문만</button>
+          <button id="mapUnvisitedBtn" class="task-toggle-btn" style="flex:0 0 auto;padding:9px 12px;">미방문만</button>
         </div>
         <div class="map-controls">
           <button id="mapLocateBtn" class="btn-neutral" style="padding:9px 12px;">내 위치</button>
@@ -360,7 +360,7 @@
           <span><i class="map-dot called"></i>통화·제안서만</span>
           <span><i class="map-dot visited"></i>방문완료</span>
         </div>
-        <div id="mapZoomHint" class="map-note" style="display:none;">지도를 확대하면 지점 이름이 표시됩니다</div>
+        <div id="mapZoomHint" class="map-note" style="display:none;">지점이 뭉쳐 있습니다. 확대하면 이름이 표시됩니다</div>
         <div id="mapInfo" class="map-info" style="display:none;"></div>
         <div id="mapNote" class="map-note"></div>
       </div>
@@ -1706,14 +1706,15 @@
       sdkLoading: false, sdkReady: false, inited: false,
       data: null, map: null, clusterer: null,
       markers: [],            // { key, marker, v, bank }
-      unvisitedOnly: true, bank: '', fullscreen: false,
+      unvisitedOnly: false, bank: '', fullscreen: false, // 방문한 곳도 파란 동그라미로 보이게 기본 노출
       myMarker: null, myCircle: null, labels: []
     };
 
-    // 453곳 이름을 한꺼번에 띄우면 글자가 겹쳐 못 읽는다. 충분히 확대했을 때
-    // 화면 안에 들어온 지점만 이름을 붙인다. (클러스터가 풀리는 레벨과 맞춰둠)
-    const MAP_LABEL_MAX_LEVEL = 5;
-    const MAP_LABEL_MAX_COUNT = 80;
+    // 이름표는 화면에 보이는 지점 전부에 붙인다. 지도 밖의 것까지 만들 이유는 없으므로
+    // 보이는 영역으로만 제한한다. 아주 축소했을 땐(레벨 9+) 마커가 뭉쳐지므로 이름표도 뗀다.
+    const MAP_LABEL_MAX_LEVEL = 8;
+    const MAP_LABEL_MAX_COUNT = 600; // 실제 지점 수(453)보다 크게 잡아 잘리지 않게 한다
+    const MAP_CLUSTER_MIN_LEVEL = 9; // 이 레벨부터 마커를 뭉친다(이름표가 붙는 레벨과 겹치지 않게)
 
     const mapStatusEl = () => document.getElementById('mapStatus');
 
@@ -1727,15 +1728,14 @@
     function mapMarkerImage(v) {
       if (MAP_MARKER_IMAGES[v]) return MAP_MARKER_IMAGES[v];
       let svg, size;
-      if (v === 0) {        // 미방문 = 동그라미
-        size = 22;
-        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="2.5"/></svg>';
-      } else if (v === 1) { // 통화/제안서만 = 반쯤 지워진 동그라미
-        size = 22;
-        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="none" stroke="#b91c1c" stroke-width="2.5" stroke-dasharray="3 2.5"/></svg>';
-      } else {              // 방문완료 = 지워진 상태(옅은 점)
-        size = 12;
-        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/></svg>';
+      // 속은 전부 노란색으로 채워 지도 위에서 눈에 띄게 하고, 테두리 색으로 상태를 구분한다.
+      size = 22;
+      if (v === 0) {        // 미방문 = 빨간 테두리
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="#fde047" stroke="#b91c1c" stroke-width="2.5"/></svg>';
+      } else if (v === 1) { // 통화/제안서만 = 빨간 점선
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="#fde047" stroke="#b91c1c" stroke-width="2.5" stroke-dasharray="3 2.5"/></svg>';
+      } else {              // 방문완료 = 파란 테두리 (지우지 않고 색만 바뀐다)
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="#fde047" stroke="#1d4ed8" stroke-width="2.5"/></svg>';
       }
       MAP_MARKER_IMAGES[v] = new kakao.maps.MarkerImage(
         'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
@@ -1855,7 +1855,7 @@
         });
 
         mapState.clusterer = new kakao.maps.MarkerClusterer({
-          map, averageCenter: true, minLevel: 6, disableClickZoom: false
+          map, averageCenter: true, minLevel: MAP_CLUSTER_MIN_LEVEL, disableClickZoom: false
         });
 
         // 확대/이동이 끝날 때마다 이름표를 다시 계산한다 (드래그 중에는 뜨지 않는다)
