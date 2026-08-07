@@ -1869,6 +1869,14 @@
 
         mapState.inited = true;
         applyMapFilter();
+        // 카드가 막 펼쳐진 직후라 컨테이너 크기가 아직 안 잡혔을 수 있다. 그 상태로 만들면
+        // 지도 영역 계산이 어긋나 이름표가 하나도 안 붙는다. 레이아웃이 끝난 뒤 한 번 더 맞춘다.
+        setTimeout(() => {
+          if (!mapState.map) return;
+          mapState.map.relayout();
+          mapState.map.setCenter(new kakao.maps.LatLng(cLat, cLng));
+          updateMapLabels();
+        }, 250);
       } catch (e) {
         mapFail('지도 초기화 실패: ' + e.message);
       }
