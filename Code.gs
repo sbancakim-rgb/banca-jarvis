@@ -243,6 +243,8 @@ function doGet(e) {
       result = handleMapData();
     } else if (action === 'geoStatus') {
       result = handleGeoStatus();
+    } else if (action === 'branchDetail') {
+      result = handleBranchDetail(e.parameter.bank || '', e.parameter.branch || '');
     } else {
       result = { error: 'unknown action' };
     }
@@ -1507,6 +1509,38 @@ function handleMapData() {
     points: points,
     missing: missing
   };
+}
+
+// 지도에서 지점을 눌렀을 때 보여줄 판매자 상세.
+// 입력해 둔 5개 항목은 양이 많아 mapData에 미리 싣지 않고, 누른 지점 것만 그때 가져온다.
+function handleBranchDetail(bank, branch) {
+  if (!String(bank || '').trim() || !String(branch || '').trim()) {
+    return { ok: false, message: '은행과 지점이 필요합니다.' };
+  }
+  var email = getCurrentUserEmail().toLowerCase();
+  var rows = readRowsCached(SHEET_SELLER);
+  var group = findMatchingGroup(rows, bank, branch);
+
+  var sellers = [];
+  for (var i = 0; i < group.length; i++) {
+    var idx = group[i];
+    if (isHeaderEchoRow(rows, idx)) continue;
+    var rowEmail = String(rows[idx][11] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    var r = rows[idx];
+    var name = String(r[3] || '').trim();
+    if (!name) continue;
+    sellers.push({
+      판매자명: name,
+      직책: String(r[4] || '').trim(),
+      가족관계: String(r[5] || '').trim(),
+      자택: String(r[6] || '').trim(),
+      판매성향: String(r[7] || '').trim(),
+      방문이력: String(r[8] || '').trim(),
+      기타대화내용: String(r[9] || '').trim()
+    });
+  }
+  return { ok: true, 은행명: bank, 지점명: branch, sellers: sellers };
 }
 
 // 좌표 수집이 잘 됐는지 확인용(읽기 전용). 상태별 개수와 표본을 돌려준다.

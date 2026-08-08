@@ -247,12 +247,16 @@
   .map-label .bk { font-weight: 500; color: var(--muted); margin-right: 3px; }
   .map-label.called { color: #b91c1c; border-style: dashed; }
   .map-label.done { color: #1d4ed8; font-weight: 600; opacity: 0.8; }
-  .map-info {
-    margin-top: 10px; padding: 10px 12px; background: #f8fafc;
-    border: 1px solid var(--border); border-radius: 10px; font-size: 13px; line-height: 1.6;
-  }
-  .map-info-title { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
-  .map-info-sellers { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  /* 지점 상세 팝업 */
+  .md-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .md-seller { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: #f8fafc; }
+  .md-seller-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .md-seller-name .pos { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .md-field { font-size: 13px; line-height: 1.55; margin-top: 5px; }
+  .md-field .lbl { display: inline-block; min-width: 62px; font-weight: 700; color: var(--primary); }
+  .md-field .val { white-space: pre-wrap; }
+  .md-field.empty .val { color: #cbd5e1; }
+  .md-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 14px 0; }
 
   /* 업무 LIST */
   .task-target-toggle { display: flex; gap: 8px; }
@@ -361,7 +365,6 @@
           <span><i class="map-dot visited"></i>방문완료</span>
         </div>
         <div id="mapZoomHint" class="map-note" style="display:none;">지점이 뭉쳐 있습니다. 확대하면 이름이 표시됩니다</div>
-        <div id="mapInfo" class="map-info" style="display:none;"></div>
         <div id="mapNote" class="map-note"></div>
       </div>
       <div id="mapStatus" class="status-box"></div>
@@ -500,6 +503,15 @@
           <button id="alarmClearBtn" class="btn-neutral">알람 해제</button>
         </div>
         <button id="alarmCancelBtn" class="btn-neutral" style="margin-top:8px;background:transparent;color:var(--muted);">취소</button>
+      </div>
+    </div>
+
+    <!-- 지도 지점 상세 팝업 -->
+    <div id="mapDetailOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:150;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:18px;width:calc(100% - 32px);max-width:380px;max-height:calc(100% - 64px);overflow-y:auto;">
+        <div id="mapDetailHead" style="margin-bottom:12px;"></div>
+        <div id="mapDetailBody"></div>
+        <button id="mapDetailCloseBtn" class="btn-neutral" style="margin-top:14px;">닫기</button>
       </div>
     </div>
 
@@ -1950,20 +1962,68 @@
       updateMapLabels();
     }
 
+    // 지점을 누르면 판매자 상세를 팝업으로 띄운다. 입력해 둔 5개 항목은 양이 많아
+    // 지도 데이터에 미리 싣지 않고, 누른 지점 것만 그때 받아온 뒤 세션 동안 재사용한다.
+    const FIELD_LABELS = [['가족관계','가족관계'],['자택','자택'],['판매성향','판매성향'],
+                          ['방문이력','방문이력'],['기타대화내용','기타']];
+    const mapDetailCache = {};
+
+    function closeMapDetail() { document.getElementById('mapDetailOverlay').style.display = 'none'; }
+
+    function renderMapDetail(sellers) {
+      const body = document.getElementById('mapDetailBody');
+      if (!sellers || !sellers.length) {
+        body.innerHTML = '<div class="md-empty">등록된 판매자가 없습니다.</div>';
+        return;
+      }
+      body.innerHTML = sellers.map(s => {
+        const fields = FIELD_LABELS.map(([key, label]) => {
+          const v = (s[key] || '').trim();
+          return `<div class="md-field${v ? '' : ' empty'}">` +
+                 `<span class="lbl">${label}</span>` +
+                 `<span class="val">${v ? escapeHtml(v) : '정보 없음'}</span></div>`;
+        }).join('');
+        return `<div class="md-seller">` +
+               `<div class="md-seller-name">${escapeHtml(s.판매자명)}` +
+               (s.직책 ? `<span class="pos">${escapeHtml(s.직책)}</span>` : '') + `</div>` +
+               fields + `</div>`;
+      }).join('');
+    }
+
     function showMapInfo(point, info) {
-      const el = document.getElementById('mapInfo');
+      const overlay = document.getElementById('mapDetailOverlay');
+      const head = document.getElementById('mapDetailHead');
+      const body = document.getElementById('mapDetailBody');
+
       const label = point.v === 0 ? '미방문' : point.v === 1 ? '통화·제안서만' : '방문완료';
       const cls = point.v === 2 ? 'visited' : 'unvisited';
-      const name = info ? `${escapeHtml(info.은행명)} ${escapeHtml(info.지점명)}` : escapeHtml(point.k);
-      const sellers = (info && info.sellers && info.sellers.length)
-        ? info.sellers.map(s => escapeHtml(s.판매자명 + (s.직책 ? ' ' + s.직책 : ''))).join(', ')
-        : '등록된 판매자 없음';
-      el.innerHTML =
-        `<div class="map-info-title">${name}</div>` +
-        `<span class="branch-chip ${cls}">${label}</span>` +
-        `<div class="map-info-sellers">${sellers}</div>`;
-      el.style.display = 'block';
+      const bank = info ? info.은행명 : '';
+      const branch = info ? info.지점명 : point.k;
+      head.innerHTML = `<div class="md-title">${escapeHtml(bank)} ${escapeHtml(branch)}</div>` +
+                       `<span class="branch-chip ${cls}">${label}</span>`;
+      overlay.style.display = 'flex';
+
+      const cached = mapDetailCache[point.k];
+      if (cached) { renderMapDetail(cached); return; }
+
+      body.innerHTML = '<div class="md-empty">불러오는 중...</div>';
+      if (!bank || !branch) { renderMapDetail(info ? info.sellers : []); return; }
+
+      jsonpRequest(getUrl(), { action: 'branchDetail', bank, branch }, data => {
+        if (!data || data.error || !data.sellers) {
+          // 상세를 못 받아오면 최소한 이름/직책이라도 보여준다 (이미 갖고 있는 정보)
+          renderMapDetail((info && info.sellers) ? info.sellers : []);
+          return;
+        }
+        mapDetailCache[point.k] = data.sellers;
+        renderMapDetail(data.sellers);
+      });
     }
+
+    document.getElementById('mapDetailCloseBtn').onclick = closeMapDetail;
+    document.getElementById('mapDetailOverlay').onclick = e => {
+      if (e.target.id === 'mapDetailOverlay') closeMapDetail(); // 바깥을 누르면 닫힘
+    };
 
     function mapLocateMe() {
       if (!mapState.inited) return;
