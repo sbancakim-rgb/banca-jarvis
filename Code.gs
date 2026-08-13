@@ -245,6 +245,8 @@ function doGet(e) {
       result = handleGeoStatus();
     } else if (action === 'branchDetail') {
       result = handleBranchDetail(e.parameter.bank || '', e.parameter.branch || '');
+    } else if (action === 'ownerAudit') {
+      result = handleOwnerAudit();
     } else {
       result = { error: 'unknown action' };
     }
@@ -1511,6 +1513,34 @@ function handleMapData() {
   };
 }
 
+// 진단용(읽기 전용): 담당자이메일(L열) 분포와, 판매자명이 있는 행의 소유자 현황.
+// 로그인한 사용자와 L열 값이 어긋나면 목록·상세가 비어 보이므로 그 여부를 확인한다.
+function handleOwnerAudit() {
+  var rows = readRowsCached(SHEET_SELLER);
+  var byOwner = {};
+  var named = 0, namedBlankOwner = 0;
+  for (var i = 1; i < rows.length; i++) {
+    if (isHeaderEchoRow(rows, i)) continue;
+    var owner = String(rows[i][11] || '').trim().toLowerCase() || '(비어있음)';
+    var name = String(rows[i][3] || '').trim();
+    if (!byOwner[owner]) byOwner[owner] = { 전체행: 0, 판매자명있는행: 0 };
+    byOwner[owner].전체행++;
+    if (name) {
+      byOwner[owner].판매자명있는행++;
+      named++;
+      if (owner === '(비어있음)') namedBlankOwner++;
+    }
+  }
+  return {
+    ok: true,
+    로그인이메일: getCurrentUserEmail() || '(없음 - 토큰 미첨부)',
+    총행수: rows.length,
+    판매자명있는행: named,
+    소유자비어있는행: namedBlankOwner,
+    소유자별: byOwner
+  };
+}
+
 // 지도에서 지점을 눌렀을 때 보여줄 판매자 상세.
 // 입력해 둔 5개 항목은 양이 많아 mapData에 미리 싣지 않고, 누른 지점 것만 그때 가져온다.
 function handleBranchDetail(bank, branch) {
@@ -1627,14 +1657,44 @@ function geocodeByAddress(address) {
 // 가장 위험한 실패는 "은행은 맞는데 지점이 다른 곳"이다. 실제로 "기업은행 남동공단비전"을
 // 찾다가 부산의 "IBK기업은행 금사공단"이 잡힌 적이 있다. 은행명과 은행 카테고리만으로는
 // 그 은행의 아무 지점이나 통과하므로, 반드시 지점명 자체가 일치해야 채택한다.
+// 카카오가 붙이는 브랜드 접두어. 시트에는 없고 카카오에만 있어서 그대로 비교하면 어긋난다.
+// (예: 시트 "농협은행 인천논현역" vs 카카오 "NH농협은행 인천논현금융센터")
+var BANK_BRAND_PREFIXES = ['NH', 'KB', 'IBK', 'BNK', 'DGB', 'KDB', 'SC', 'IM', 'JB', 'KEB'];
+
+function stripBrandPrefix(key) {
+  for (var i = 0; i < BANK_BRAND_PREFIXES.length; i++) {
+    var p = BANK_BRAND_PREFIXES[i];
+    if (key.indexOf(p) === 0) return key.substring(p.length);
+  }
+  return key;
+}
+
+// 비교용 정규화: 공백/한글숫자 정리에 더해 대소문자까지 무시한다
+// (시트 "IM뱅크" vs 카카오 "iM뱅크"가 다른 문자열로 취급되던 문제).
+function matchKey(s) {
+  return normalizeText(s).toUpperCase();
+}
+
 function geocodeByName(bank, branch) {
-  var normBank = normalizeText(bank);
-  var coreBranch = branchCore(branch);
+  var branchRaw = String(branch || '').trim();
+  var bankKey = matchKey(bank);
+
+  // 지점명이 "군자농협 거모지점"처럼 은행 이름으로 시작하면 그쪽이 진짜 은행이다.
+  // (은행명 칸에 "농축협" 같은 상위 분류가 들어있거나, 은행명이 지점명에 중복된 경우)
+  var lead = branchRaw.match(/^([가-힣A-Za-z]+(?:농협|축협|은행|뱅크))\s+/);
+  var effBankKey = bankKey, effBranch = branchRaw;
+  if (lead) {
+    effBankKey = matchKey(lead[1]);
+    effBranch = branchRaw.substring(lead[0].length).trim() || branchRaw;
+  }
+  var coreBranch = stripBrandPrefix(branchCore(matchKey(effBranch)));
   if (!coreBranch) return null;
-  var queries = [bank + ' ' + branch, branch + ' ' + bank];
+
+  var queries = [bank + ' ' + branchRaw, branchRaw, lead ? lead[1] + ' ' + effBranch : null];
   var best = null, bestScore = 0;
 
   for (var q = 0; q < queries.length; q++) {
+    if (!queries[q]) continue;
     var data;
     try { data = kakaoGet('/v2/local/search/keyword.json', { query: queries[q], size: 15 }); }
     catch (e) { continue; }
@@ -1644,11 +1704,11 @@ function geocodeByName(bank, branch) {
       var lat = Number(d.y), lng = Number(d.x);
       if (!isValidKoreaCoord(lat, lng)) continue;
 
-      var place = normalizeText(d.place_name);
-      if (place.indexOf(normBank) === -1) continue; // 다른 은행 → 탈락
+      var placeKey = matchKey(d.place_name);
+      if (placeKey.indexOf(effBankKey) === -1) continue; // 다른 은행 → 탈락
 
-      // 장소명에서 은행명을 걷어낸 나머지가 그 지점을 가리키는 부분이다.
-      var placeBranch = branchCore(place.replace(normBank, ''));
+      // 장소명에서 은행명과 브랜드 접두어를 걷어낸 나머지가 그 지점을 가리키는 부분이다.
+      var placeBranch = stripBrandPrefix(branchCore(placeKey.split(effBankKey).join('')));
       if (!placeBranch) continue;
 
       // 지점명이 일치해야만 점수를 준다. 은행명/카테고리는 가산점일 뿐 단독 합격 불가.
@@ -1666,6 +1726,26 @@ function geocodeByName(bank, branch) {
   }
   // 0.6 미만이면 "그 은행의 다른 지점"일 가능성이 크다. 틀린 핀은 없는 핀보다 나쁘다.
   return bestScore >= 0.6 ? best : null;
+}
+
+// 관공서 안에 있는 출장소는 카카오에 지점명으로 등록돼 있지 않다("단원구청(출)" 검색 결과 0건).
+// 이 경우 건물 자체를 찾는다 — 출장소가 그 건물 안에 있으므로 찾아갈 위치로는 정확하다.
+// 구청/시청/군청으로 끝나는 것만 시도해서 "배곧" 같은 모호한 이름은 손대지 않는다.
+function geocodeGovernmentOffice(branch) {
+  var core = branchCore(String(branch || '').trim());
+  if (!/(구청|시청|군청)$/.test(core)) return null;
+  var data;
+  try { data = kakaoGet('/v2/local/search/keyword.json', { query: core, size: 10 }); }
+  catch (e) { return null; }
+  var docs = data.documents || [];
+  for (var i = 0; i < docs.length; i++) {
+    var d = docs[i];
+    var lat = Number(d.y), lng = Number(d.x);
+    if (!isValidKoreaCoord(lat, lng)) continue;
+    if (matchKey(d.place_name).indexOf(matchKey(core)) === -1) continue;
+    return { lat: lat, lng: lng, label: d.place_name + ' (건물 기준)', source: '건물추정' };
+  }
+  return null;
 }
 
 // 판매자정보의 모든 지점에 대해 지점위치 시트에 빈 행을 만든다. 기존 행은 건드리지 않는다.
@@ -1717,10 +1797,17 @@ function geocodeBatch(limit) {
     var branch = String(r[2] || '').trim();
     var addr = String(r[6] || '').trim();
 
+    // 시트 중간의 머리글 행이 지점위치에 들어온 것은 지점이 아니므로 검색하지 않는다.
+    if (bank === '은행명' && branch === '지점명') {
+      r[5] = '제외'; r[9] = stamp;
+      continue;
+    }
+
     var hit = null;
     try {
       if (addr) hit = geocodeByAddress(addr);
       if (!hit) hit = geocodeByName(bank, branch);
+      if (!hit) hit = geocodeGovernmentOffice(branch);
     } catch (e) {
       hit = null;
     }
