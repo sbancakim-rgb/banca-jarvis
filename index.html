@@ -2001,33 +2001,33 @@
       const label = point.v === 0 ? '미방문' : point.v === 1 ? '통화·제안서만' : '방문완료';
       const cls = point.v === 2 ? 'visited' : 'unvisited';
       const bank = info ? info.은행명 : '';
-      const branch = info ? info.지점명 : point.k;
-      head.innerHTML = `<div class="md-title">${escapeHtml(bank)} ${escapeHtml(branch)}</div>` +
-                       `<span class="branch-chip ${cls}">${label}</span>`;
+      const branch = info ? info.지점명 : '';
+      const setHead = (b, n) => {
+        head.innerHTML = `<div class="md-title">${escapeHtml(b || '')} ${escapeHtml(n || '')}</div>` +
+                         `<span class="branch-chip ${cls}">${label}</span>`;
+      };
+      setHead(bank, branch || point.k);
       overlay.style.display = 'flex';
 
       const cached = mapDetailCache[point.k];
-      if (cached) { renderMapDetail(cached); return; }
+      if (cached) { renderMapDetail(cached.sellers); setHead(cached.은행명, cached.지점명); return; }
 
       body.innerHTML = '<div class="md-empty">불러오는 중...</div>';
       const listCount = (info && info.sellers) ? info.sellers.length : -1;
-      if (!bank || !branch) {
-        mapDetailDiag = `진단 A: 지점정보 못찾음 k=${point.k} 목록크기=${branchListData.length}`;
-        renderMapDetail(info ? info.sellers : []);
-        return;
-      }
 
-      jsonpRequest(getUrl(), { action: 'branchDetail', bank, branch }, data => {
+      // 지점키(k)를 항상 함께 보낸다. 프런트 목록이 비어 있어도(부팅 요청 실패 등)
+      // 서버가 키만으로 지점을 찾아 상세를 돌려줄 수 있다.
+      jsonpRequest(getUrl(), { action: 'branchDetail', bank, branch, key: point.k }, data => {
         if (!data || data.error || !data.sellers) {
-          // 상세를 못 받아오면 최소한 이름/직책이라도 보여준다 (이미 갖고 있는 정보)
-          mapDetailDiag = `진단 B: 응답오류 ${(data && (data.error || data.message)) || '무응답'} / 목록상 판매자 ${listCount}명`;
+          mapDetailDiag = `진단 B: ${(data && (data.error || data.message)) || '무응답'} / 목록 ${listCount}명 / k=${point.k}`;
           renderMapDetail((info && info.sellers) ? info.sellers : []);
           return;
         }
+        if (data.은행명) setHead(data.은행명, data.지점명);
         if (!data.sellers.length) {
-          mapDetailDiag = `진단 C: 서버가 0명 반환 (목록상 ${listCount}명) bank=${bank} branch=${branch}`;
+          mapDetailDiag = `진단 C: 서버 0명 (목록 ${listCount}명) ${data.은행명 || bank} ${data.지점명 || branch}`;
         }
-        mapDetailCache[point.k] = data.sellers;
+        mapDetailCache[point.k] = data;
         renderMapDetail(data.sellers);
       });
     }

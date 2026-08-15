@@ -244,7 +244,7 @@ function doGet(e) {
     } else if (action === 'geoStatus') {
       result = handleGeoStatus();
     } else if (action === 'branchDetail') {
-      result = handleBranchDetail(e.parameter.bank || '', e.parameter.branch || '');
+      result = handleBranchDetail(e.parameter.bank || '', e.parameter.branch || '', e.parameter.key || '');
     } else if (action === 'ownerAudit') {
       result = handleOwnerAudit();
     } else if (action === 'diagAs') {
@@ -1588,12 +1588,31 @@ function handleDiagAs(as, bank, branch) {
 
 // 지도에서 지점을 눌렀을 때 보여줄 판매자 상세.
 // 입력해 둔 5개 항목은 양이 많아 mapData에 미리 싣지 않고, 누른 지점 것만 그때 가져온다.
-function handleBranchDetail(bank, branch) {
-  if (!String(bank || '').trim() || !String(branch || '').trim()) {
-    return { ok: false, message: '은행과 지점이 필요합니다.' };
-  }
-  var email = getCurrentUserEmail().toLowerCase();
+// key(지점키)만으로도 조회할 수 있다. 프런트의 지점 목록이 비어 있어도(부팅 요청 실패 등)
+// 지도에서 누른 지점의 상세를 받을 수 있어야 하기 때문이다.
+function handleBranchDetail(bank, branch, key) {
   var rows = readRowsCached(SHEET_SELLER);
+  bank = String(bank || '').trim();
+  branch = String(branch || '').trim();
+
+  if ((!bank || !branch) && String(key || '').trim()) {
+    var bankCol0 = fillMergedColumn(rows, 1);
+    var branchCol0 = fillMergedColumn(rows, 2);
+    for (var s = 1; s < rows.length; s++) {
+      if (isHeaderEchoRow(rows, s)) continue;
+      var b0 = String(bankCol0[s] || '').trim();
+      var r0 = String(branchCol0[s] || '').trim();
+      if (!b0 || !r0) continue;
+      if (branchKey(b0, r0) !== String(key).trim()) continue;
+      bank = b0; branch = r0;
+      break;
+    }
+  }
+  if (!bank || !branch) {
+    return { ok: false, message: '지점을 찾을 수 없습니다.' };
+  }
+
+  var email = getCurrentUserEmail().toLowerCase();
   var group = findMatchingGroup(rows, bank, branch);
 
   var sellers = [];
