@@ -247,6 +247,8 @@ function doGet(e) {
       result = handleBranchDetail(e.parameter.bank || '', e.parameter.branch || '');
     } else if (action === 'ownerAudit') {
       result = handleOwnerAudit();
+    } else if (action === 'diagAs') {
+      result = handleDiagAs(e.parameter.as || '', e.parameter.bank || '', e.parameter.branch || '');
     } else {
       result = { error: 'unknown action' };
     }
@@ -1541,6 +1543,49 @@ function handleOwnerAudit() {
   };
 }
 
+// 진단용(읽기 전용): 특정 담당자로 로그인했을 때 목록과 상세가 각각 몇 명을 보게 되는지 비교한다.
+// 지도 목록에는 지점이 뜨는데 상세는 비어 보이는 원인을 좁히기 위한 것.
+// 인증 없이도 전체가 조회되는 엔드포인트이므로 이 함수가 새로 열어주는 권한은 없다.
+function handleDiagAs(as, bank, branch) {
+  var email = String(as || '').trim().toLowerCase();
+  var rows = readRowsCached(SHEET_SELLER);
+  var bankCol = fillMergedColumn(rows, 1);
+  var branchCol = fillMergedColumn(rows, 2);
+
+  // ① handleListBranches 관점 (지도 목록이 만들어지는 방식)
+  var lbFound = false, lbSellers = 0;
+  for (var i = 1; i < rows.length; i++) {
+    if (isHeaderEchoRow(rows, i)) continue;
+    var re = String(rows[i][11] || '').trim().toLowerCase();
+    if (email && re && re !== email) continue;
+    if (String(bankCol[i] || '').trim() !== bank) continue;
+    if (String(branchCol[i] || '').trim() !== branch) continue;
+    lbFound = true;
+    if (String(rows[i][3] || '').trim()) lbSellers++;
+  }
+
+  // ② handleBranchDetail 관점 (팝업이 쓰는 방식)
+  var group = findMatchingGroup(rows, bank, branch);
+  var bdSellers = 0, dropByEmail = 0, dropNoName = 0, owners = {};
+  for (var g = 0; g < group.length; g++) {
+    var idx = group[g];
+    if (isHeaderEchoRow(rows, idx)) continue;
+    var owner = String(rows[idx][11] || '').trim().toLowerCase() || '(비어있음)';
+    owners[owner] = (owners[owner] || 0) + 1;
+    if (email && owner !== '(비어있음)' && owner !== email) { dropByEmail++; continue; }
+    if (!String(rows[idx][3] || '').trim()) { dropNoName++; continue; }
+    bdSellers++;
+  }
+
+  return {
+    ok: true, 기준이메일: email || '(필터 없음)', 은행: bank, 지점: branch,
+    목록_지점존재: lbFound, 목록_판매자수: lbSellers,
+    상세_그룹크기: group.length, 상세_판매자수: bdSellers,
+    제외_다른담당자: dropByEmail, 제외_이름없음: dropNoName,
+    그룹내_담당자분포: owners
+  };
+}
+
 // 지도에서 지점을 눌렀을 때 보여줄 판매자 상세.
 // 입력해 둔 5개 항목은 양이 많아 mapData에 미리 싣지 않고, 누른 지점 것만 그때 가져온다.
 function handleBranchDetail(bank, branch) {
@@ -1918,6 +1963,42 @@ function regeocodeNames() {
   var res = geocodeBatch(2000);
   res.초기화 = reset;
   res.이상치 = flagDistantOutliers(100);
+  Logger.log(JSON.stringify(res, null, 2));
+  return res;
+}
+
+// 담당자이메일(L열)에 이메일이 아닌 값이 들어간 행을 실제 이메일로 정정한다.
+// 앱은 이 열로 "내 담당"을 가려내므로, 이름이 들어있으면 어느 계정과도 안 맞아
+// 그 행들이 아무에게도 보이지 않는다.
+// 정확히 일치하는 값만 바꾸므로 다른 행은 건드리지 않는다.
+var OWNER_FIXES = {
+  '차민국': 'kukkie1@hanmail.net'
+};
+
+function fixOwnerEmails() {
+  var sheet = getSS().getSheetByName(SHEET_SELLER);
+  var rows = readRows(SHEET_SELLER);
+  var changed = 0;
+  var before = {};
+
+  for (var i = 1; i < rows.length; i++) {
+    var cur = String(rows[i][11] || '').trim();
+    var fixed = OWNER_FIXES[cur];
+    if (!fixed) continue;
+    before[cur] = (before[cur] || 0) + 1;
+    rows[i][11] = fixed;
+    changed++;
+  }
+
+  if (changed) {
+    var col = [];
+    for (var c = 1; c < rows.length; c++) col.push([rows[c][11] || '']);
+    sheet.getRange(2, 12, col.length, 1).setValues(col);
+    SpreadsheetApp.flush();
+    invalidateAllCaches();
+  }
+
+  var res = { 정정한행: changed, 정정내역: before, 매핑: OWNER_FIXES };
   Logger.log(JSON.stringify(res, null, 2));
   return res;
 }
