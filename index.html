@@ -257,6 +257,9 @@
   .md-field .val { white-space: pre-wrap; }
   .md-field.empty .val { color: #cbd5e1; }
   .md-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 14px 0; }
+  .md-log { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .md-log-row { display: flex; gap: 6px; }
+  .md-log-row input, .md-log-row select { flex: 1; min-width: 0; padding: 9px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; }
 
   /* 업무 LIST */
   .task-target-toggle { display: flex; gap: 8px; }
@@ -516,7 +519,20 @@
       <div style="background:#fff;border-radius:16px;padding:18px;width:calc(100% - 32px);max-width:380px;max-height:calc(100% - 64px);overflow-y:auto;">
         <div id="mapDetailHead" style="margin-bottom:12px;"></div>
         <div id="mapDetailBody"></div>
-        <button id="mapDetailCloseBtn" class="btn-neutral" style="margin-top:14px;">닫기</button>
+        <div class="md-log">
+          <div class="md-log-row">
+            <input type="date" id="mapLogDate" />
+            <select id="mapLogType">
+              <option value="지점방문">지점방문</option>
+              <option value="통화">통화</option>
+              <option value="제안서">제안서</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+          <button id="mapLogBtn" class="btn-primary" style="margin-top:8px;">이 지점 방문 입력</button>
+          <div id="mapLogStatus" class="status-box"></div>
+        </div>
+        <button id="mapDetailCloseBtn" class="btn-neutral" style="margin-top:10px;">닫기</button>
       </div>
     </div>
 
@@ -2044,6 +2060,7 @@
     function closeMapDetail() { document.getElementById('mapDetailOverlay').style.display = 'none'; }
 
     let mapDetailDiag = '';  // 원인 파악용 임시 표시 (해결되면 제거)
+    let mapLogTarget = null; // 팝업이 현재 다루는 지점 (방문 입력 대상)
 
     function renderMapDetail(sellers) {
       const body = document.getElementById('mapDetailBody');
@@ -2082,6 +2099,13 @@
       setHead(bank, branch || point.k);
       overlay.style.display = 'flex';
 
+      // 방문 입력 버튼이 쓸 대상. 상세 응답이 오면 서버가 확정한 이름으로 갱신된다.
+      mapLogTarget = { point: point, bank: bank, branch: branch, setHead: setHead };
+      document.getElementById('mapLogDate').value = todayLocalISO();
+      document.getElementById('mapLogType').value = '지점방문';
+      hideStatus(document.getElementById('mapLogStatus'));
+      document.getElementById('mapLogBtn').disabled = false;
+
       // 저장해둔 상세가 있으면 즉시 보여주고, 뒤에서 조용히 갱신한다.
       const cached = mapDetailCache[point.k] || cacheLoad('detail:' + point.k);
       if (cached && cached.sellers) {
@@ -2102,7 +2126,13 @@
           renderMapDetail((info && info.sellers) ? info.sellers : []);
           return;
         }
-        if (data.은행명) setHead(data.은행명, data.지점명);
+        if (data.은행명) {
+          setHead(data.은행명, data.지점명);
+          if (mapLogTarget && mapLogTarget.point.k === point.k) {
+            mapLogTarget.bank = data.은행명;
+            mapLogTarget.branch = data.지점명;
+          }
+        }
         if (!data.sellers.length && !(cached && cached.sellers)) {
           mapDetailDiag = `진단 C: 서버 0명 (목록 ${listCount}명) ${data.은행명 || bank} ${data.지점명 || branch}`;
         }
@@ -2111,6 +2141,72 @@
         renderMapDetail(data.sellers);
       });
     }
+
+    // 방문 입력 후 지도/대시보드를 화면에서 바로 맞춰준다. 서버 응답(ok)을 받은 뒤에만 반영한다 —
+    // 미리 지웠다가 저장이 실패하면 안 간 지점을 다녀온 것으로 오해하게 되고, 그게 이 지도를 만든 이유와 정반대다.
+    function applyVisitLocally(key, visitType) {
+      const newV = (!visitType || visitType === '지점방문') ? 2 : 1;
+      const m = mapState.markers.find(x => x.key === key);
+      if (!m || newV <= m.v) return;   // 이미 같거나 더 진행된 상태면 낮추지 않는다
+      const wasUnvisited = m.v === 0;
+      m.v = newV;
+      m.marker.setImage(mapMarkerImage(newV));
+
+      // 지도 데이터와 저장본도 같이 고쳐, 다시 열었을 때 예전 상태로 되돌아가지 않게 한다
+      if (mapState.data && mapState.data.points) {
+        const p = mapState.data.points.find(x => x.k === key);
+        if (p) p.v = newV;
+        cacheSave('mapData', mapState.data);
+      }
+      applyMapFilter();
+
+      // 대시보드는 별도 요청으로 받은 값이라, 갱신 전까지 지도와 숫자가 어긋나 보인다.
+      // 이번 달 첫 접촉일 때만 방문/미방문 수를 옮겨준다.
+      if (wasUnvisited && m.bank) {
+        const cached = cacheLoad('bootstrap');
+        const banks = cached && cached.dashboard && cached.dashboard.banks;
+        if (banks) {
+          const b = banks.find(x => x.은행명 === m.bank);
+          if (b && b.미방문 > 0) {
+            b.미방문--; b.당월방문++;
+            const br = (b.branches || []).find(x => x.지점명 === m.branch);
+            if (br) br.visited = true;
+            cacheSave('bootstrap', cached);
+            applyDashboard(cached.dashboard);
+          }
+        }
+      }
+    }
+
+    document.getElementById('mapLogBtn').onclick = function () {
+      if (!mapLogTarget) return;
+      const statusEl = document.getElementById('mapLogStatus');
+      const bank = mapLogTarget.bank, branch = mapLogTarget.branch;
+      if (!bank || !branch) { showStatus(statusEl, '지점 정보를 불러오는 중입니다. 잠시 후 다시 눌러주세요.', true); return; }
+      const date = document.getElementById('mapLogDate').value || todayLocalISO();
+      const visitType = document.getElementById('mapLogType').value;
+
+      this.disabled = true;
+      showStatus(statusEl, '입력 중...');
+      const key = mapLogTarget.point.k;
+      jsonpRequest(getUrl(), { action: 'logVisit', bank, branch, date, visitType }, data => {
+        document.getElementById('mapLogBtn').disabled = false;
+        if (!data || data.error || data.ok === false) {
+          showStatus(statusEl, '오류: ' + ((data && (data.error || data.message)) || '저장하지 못했습니다'), true);
+          return;
+        }
+        showStatus(statusEl, `✓ ${data.dateLabel} ${visitType} 입력 완료`);
+        applyVisitLocally(key, visitType);
+        if (mapLogTarget && mapLogTarget.point.k === key) {
+          mapLogTarget.point.v = (!visitType || visitType === '지점방문') ? 2 : 1;
+          const lbl = mapLogTarget.point.v === 2 ? '방문완료' : '통화·제안서만';
+          const cls = mapLogTarget.point.v === 2 ? 'visited' : 'unvisited';
+          const head = document.getElementById('mapDetailHead');
+          const chip = head.querySelector('.branch-chip');
+          if (chip) { chip.textContent = lbl; chip.className = 'branch-chip ' + cls; }
+        }
+      });
+    };
 
     document.getElementById('mapDetailCloseBtn').onclick = closeMapDetail;
     document.getElementById('mapDetailOverlay').onclick = e => {
