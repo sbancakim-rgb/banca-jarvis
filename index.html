@@ -353,7 +353,11 @@
       <div id="mapWrap" class="map-wrap" style="display:none;margin-top:12px;">
         <div class="map-controls">
           <select id="mapBankSelect"><option value="">전체 은행</option></select>
-          <button id="mapUnvisitedBtn" class="task-toggle-btn" style="flex:0 0 auto;padding:9px 12px;">미방문만</button>
+        </div>
+        <div class="map-controls">
+          <button id="mapViewAllBtn" class="task-toggle-btn active">전체</button>
+          <button id="mapViewUnvisitedBtn" class="task-toggle-btn">미방문만</button>
+          <button id="mapViewVisitedBtn" class="task-toggle-btn">방문만</button>
         </div>
         <div class="map-controls">
           <button id="mapLocateBtn" class="btn-neutral" style="padding:9px 12px;">내 위치</button>
@@ -1741,7 +1745,7 @@
       sdkLoading: false, sdkReady: false, inited: false,
       data: null, map: null, clusterer: null,
       markers: [],            // { key, marker, v, bank }
-      unvisitedOnly: false, bank: '', fullscreen: false, // 방문한 곳도 파란 동그라미로 보이게 기본 노출
+      viewFilter: 'all', bank: '', fullscreen: false, // 'all' | 'unvisited' | 'visited'
       myMarker: null, myCircle: null, labels: []
     };
 
@@ -1959,7 +1963,10 @@
     // 지금 필터 조건에서 이 마커를 보여줘야 하는지
     function mapMarkerPasses(m) {
       const bankOk = !mapState.bank || m.bank === mapState.bank;
-      const stateOk = !mapState.unvisitedOnly || m.v < 2;
+      let stateOk = true;
+      // 통화·제안서만 한 곳(v=1)은 아직 가봐야 하므로 '미방문만'에 포함시킨다.
+      if (mapState.viewFilter === 'unvisited') stateOk = m.v < 2;
+      else if (mapState.viewFilter === 'visited') stateOk = m.v === 2;
       return bankOk && stateOk;
     }
 
@@ -2010,14 +2017,18 @@
       mapState.clusterer.clear();
       mapState.clusterer.addMarkers(visible);
 
+      // 숫자는 필터와 무관하게 은행 범위 전체 기준으로 보여준다(무엇을 걸렀는지 알 수 있도록).
       const shown = mapState.markers.filter(m => (!mapState.bank || m.bank === mapState.bank));
       const left = shown.filter(m => m.v === 0).length;
       const called = shown.filter(m => m.v === 1).length;
+      const done = shown.filter(m => m.v === 2).length;
       const missing = (mapState.data && mapState.data.missing) ? mapState.data.missing.length : 0;
 
       let note = `미방문 ${left}곳`;
       if (called) note += ` · 통화만 ${called}곳`;
-      note += ` / 전체 ${shown.length}곳`;
+      note += ` · 방문 ${done}곳 / 전체 ${shown.length}곳`;
+      if (mapState.viewFilter === 'unvisited') note = '[미방문만 보는 중] ' + note;
+      else if (mapState.viewFilter === 'visited') note = '[방문만 보는 중] ' + note;
       if (missing) note += `  (위치 미등록 ${missing}곳은 표시되지 않음)`;
       document.getElementById('mapNote').textContent = note;
 
@@ -2143,11 +2154,19 @@
     document.getElementById('mapBankSelect').onchange = function () {
       mapState.bank = this.value; applyMapFilter();
     };
-    document.getElementById('mapUnvisitedBtn').onclick = function () {
-      mapState.unvisitedOnly = !mapState.unvisitedOnly;
-      this.classList.toggle('active', mapState.unvisitedOnly);
+    const MAP_VIEW_BUTTONS = [
+      ['mapViewAllBtn', 'all'], ['mapViewUnvisitedBtn', 'unvisited'], ['mapViewVisitedBtn', 'visited']
+    ];
+    function setMapView(mode) {
+      mapState.viewFilter = mode;
+      MAP_VIEW_BUTTONS.forEach(([id, m]) => {
+        document.getElementById(id).classList.toggle('active', m === mode);
+      });
       applyMapFilter();
-    };
+    }
+    MAP_VIEW_BUTTONS.forEach(([id, m]) => {
+      document.getElementById(id).onclick = () => setMapView(m);
+    });
     document.getElementById('mapLocateBtn').onclick = mapLocateMe;
     document.getElementById('mapFullBtn').onclick = function () {
       mapState.fullscreen = !mapState.fullscreen;
