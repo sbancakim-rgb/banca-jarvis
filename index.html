@@ -260,6 +260,18 @@
   .md-log { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
   .md-log-row { display: flex; gap: 6px; }
   .md-log-row input, .md-log-row select { flex: 1; min-width: 0; padding: 9px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; }
+  #mapLogNote { width: 100%; margin-top: 6px; padding: 9px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; font-family: inherit; resize: vertical; }
+  .mv-title { font-size: 12px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
+  .mv-item { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-top: 6px; font-size: 12.5px; background: #fff; }
+  .mv-head { display: flex; align-items: center; gap: 6px; }
+  .mv-date { font-weight: 700; }
+  .mv-type { font-size: 10.5px; padding: 2px 6px; border-radius: 999px; background: #eef2f7; color: var(--muted); }
+  .mv-actions { margin-left: auto; display: flex; gap: 4px; }
+  .mv-actions button { width: auto; padding: 4px 8px; font-size: 11px; border-radius: 8px; background: #eef2f7; color: var(--muted); }
+  .mv-actions button.danger { background: #fee2e2; color: #b91c1c; }
+  .mv-text { margin-top: 4px; white-space: pre-wrap; line-height: 1.5; }
+  .mv-text.empty { color: #cbd5e1; }
+  .mv-edit { width: 100%; margin-top: 6px; padding: 8px; border-radius: 8px; border: 1px solid var(--primary); font-size: 12.5px; font-family: inherit; resize: vertical; }
 
   /* 업무 LIST */
   .task-target-toggle { display: flex; gap: 8px; }
@@ -529,8 +541,10 @@
               <option value="기타">기타</option>
             </select>
           </div>
+          <textarea id="mapLogNote" rows="2" placeholder="방문 내용 (선택)"></textarea>
           <button id="mapLogBtn" class="btn-primary" style="margin-top:8px;">이 지점 방문 입력</button>
           <div id="mapLogStatus" class="status-box"></div>
+          <div id="mapVisitList"></div>
         </div>
         <button id="mapDetailCloseBtn" class="btn-neutral" style="margin-top:10px;">닫기</button>
       </div>
@@ -2103,8 +2117,11 @@
       mapLogTarget = { point: point, bank: bank, branch: branch, setHead: setHead };
       document.getElementById('mapLogDate').value = todayLocalISO();
       document.getElementById('mapLogType').value = '지점방문';
+      document.getElementById('mapLogNote').value = '';
       hideStatus(document.getElementById('mapLogStatus'));
       document.getElementById('mapLogBtn').disabled = false;
+      document.getElementById('mapVisitList').innerHTML = '';
+      if (bank && branch) loadBranchVisits(bank, branch);
 
       // 저장해둔 상세가 있으면 즉시 보여주고, 뒤에서 조용히 갱신한다.
       const cached = mapDetailCache[point.k] || cacheLoad('detail:' + point.k);
@@ -2129,8 +2146,10 @@
         if (data.은행명) {
           setHead(data.은행명, data.지점명);
           if (mapLogTarget && mapLogTarget.point.k === point.k) {
+            const wasUnknown = !mapLogTarget.bank || !mapLogTarget.branch;
             mapLogTarget.bank = data.은행명;
             mapLogTarget.branch = data.지점명;
+            if (wasUnknown) loadBranchVisits(data.은행명, data.지점명);
           }
         }
         if (!data.sellers.length && !(cached && cached.sellers)) {
@@ -2140,6 +2159,90 @@
         cacheSave('detail:' + point.k, data);
         renderMapDetail(data.sellers);
       });
+    }
+
+    // ── 이 지점의 방문 이력 ──────────────────────────────────────────────
+    function loadBranchVisits(bank, branch) {
+      const el = document.getElementById('mapVisitList');
+      if (!bank || !branch) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">불러오는 중...</div>';
+      jsonpRequest(getUrl(), { action: 'branchVisits', bank, branch }, data => {
+        if (!data || data.error || !data.visits) {
+          el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">이력을 불러오지 못했습니다.</div>';
+          return;
+        }
+        renderBranchVisits(bank, branch, data.visits);
+      });
+    }
+
+    function renderBranchVisits(bank, branch, visits) {
+      const el = document.getElementById('mapVisitList');
+      if (!visits.length) {
+        el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">아직 방문 기록이 없습니다.</div>';
+        return;
+      }
+      el.innerHTML = '<div class="mv-title">방문 이력 ' + visits.length + '건</div>' +
+        visits.map(v => {
+          const txt = (v.내용 || '').trim();
+          return `<div class="mv-item" data-row="${v.row}">
+            <div class="mv-head">
+              <span class="mv-date">${escapeHtml(v.날짜)}</span>
+              <span class="mv-type">${escapeHtml(v.방문유형)}</span>
+              <span class="mv-actions">
+                <button class="mv-edit-btn">수정</button>
+                <button class="mv-del-btn danger">삭제</button>
+              </span>
+            </div>
+            <div class="mv-text${txt ? '' : ' empty'}">${txt ? escapeHtml(txt) : '내용 없음'}</div>
+          </div>`;
+        }).join('');
+
+      el.querySelectorAll('.mv-item').forEach(item => {
+        const row = Number(item.dataset.row);
+        const v = visits.find(x => x.row === row);
+        item.querySelector('.mv-edit-btn').onclick = () => startEditVisit(item, bank, branch, v);
+        item.querySelector('.mv-del-btn').onclick = () => {
+          if (!confirm(`${v.날짜} 방문 기록을 삭제할까요?`)) return;
+          jsonpRequest(getUrl(), { action: 'deleteVisit', row, bank, branch }, d => {
+            if (!d || d.error || d.ok === false) { alert('오류: ' + ((d && (d.error || d.message)) || '삭제하지 못했습니다')); return; }
+            loadBranchVisits(bank, branch);
+          });
+        };
+      });
+    }
+
+    // 한 건을 그 자리에서 고친다. 저장이 끝나면 목록을 서버 기준으로 다시 그린다.
+    function startEditVisit(item, bank, branch, v) {
+      if (item.querySelector('.mv-edit')) return; // 이미 편집 중
+      const ta = document.createElement('textarea');
+      ta.className = 'mv-edit'; ta.rows = 3; ta.value = v.내용 || '';
+      const sel = document.createElement('select');
+      sel.className = 'mv-edit';
+      ['지점방문', '통화', '제안서', '기타'].forEach(t => {
+        const o = document.createElement('option'); o.value = t; o.textContent = t;
+        if (t === v.방문유형) o.selected = true;
+        sel.appendChild(o);
+      });
+      const save = document.createElement('button');
+      save.className = 'btn-primary'; save.style.marginTop = '6px'; save.textContent = '저장';
+      const cancel = document.createElement('button');
+      cancel.className = 'btn-neutral'; cancel.style.marginTop = '6px'; cancel.textContent = '취소';
+
+      item.querySelector('.mv-text').style.display = 'none';
+      item.appendChild(sel); item.appendChild(ta); item.appendChild(save); item.appendChild(cancel);
+
+      cancel.onclick = () => { [sel, ta, save, cancel].forEach(e => e.remove()); item.querySelector('.mv-text').style.display = ''; };
+      save.onclick = () => {
+        save.disabled = true; save.textContent = '저장 중...';
+        jsonpRequest(getUrl(), { action: 'updateVisit', row: v.row, bank, branch, note: ta.value, visitType: sel.value }, d => {
+          if (!d || d.error || d.ok === false) {
+            save.disabled = false; save.textContent = '저장';
+            alert('오류: ' + ((d && (d.error || d.message)) || '저장하지 못했습니다'));
+            return;
+          }
+          loadBranchVisits(bank, branch);
+        });
+      };
     }
 
     // 방문 입력 후 지도/대시보드를 화면에서 바로 맞춰준다. 서버 응답(ok)을 받은 뒤에만 반영한다 —
@@ -2185,18 +2288,21 @@
       if (!bank || !branch) { showStatus(statusEl, '지점 정보를 불러오는 중입니다. 잠시 후 다시 눌러주세요.', true); return; }
       const date = document.getElementById('mapLogDate').value || todayLocalISO();
       const visitType = document.getElementById('mapLogType').value;
+      const note = document.getElementById('mapLogNote').value.trim();
 
       this.disabled = true;
       showStatus(statusEl, '입력 중...');
       const key = mapLogTarget.point.k;
-      jsonpRequest(getUrl(), { action: 'logVisit', bank, branch, date, visitType }, data => {
+      jsonpRequest(getUrl(), { action: 'logVisit', bank, branch, date, visitType, note }, data => {
         document.getElementById('mapLogBtn').disabled = false;
         if (!data || data.error || data.ok === false) {
           showStatus(statusEl, '오류: ' + ((data && (data.error || data.message)) || '저장하지 못했습니다'), true);
           return;
         }
         showStatus(statusEl, `✓ ${data.dateLabel} ${visitType} 입력 완료`);
+        document.getElementById('mapLogNote').value = '';
         applyVisitLocally(key, visitType);
+        loadBranchVisits(bank, branch);
         if (mapLogTarget && mapLogTarget.point.k === key) {
           mapLogTarget.point.v = (!visitType || visitType === '지점방문') ? 2 : 1;
           const lbl = mapLogTarget.point.v === 2 ? '방문완료' : '통화·제안서만';

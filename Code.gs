@@ -132,7 +132,8 @@ var MUTATING_ACTIONS = {
   deleteVisitDay: true, updateProposal: true, updateSellerTitle: true,
   updateSellerName: true, addNewSeller: true, deleteSeller: true,
   login: true, addTask: true, editTask: true, completeTask: true,
-  moveTask: true, setTaskAlarm: true, deleteCompletedTask: true
+  moveTask: true, setTaskAlarm: true, deleteCompletedTask: true,
+  updateVisit: true, deleteVisit: true
 };
 
 // 일회성 유틸: 판매자정보 시트 K열(영업대상 체크박스) 308행부터 마지막행까지 체크박스로 채움.
@@ -188,7 +189,13 @@ function doGet(e) {
     } else if (action === 'recordForSeller') {
       result = handleRecordForSeller(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '', e.parameter.text || '', e.parameter.date || '');
     } else if (action === 'logVisit') {
-      result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '', e.parameter.visitType || '');
+      result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '', e.parameter.visitType || '', e.parameter.note || '');
+    } else if (action === 'branchVisits') {
+      result = handleBranchVisits(e.parameter.bank || '', e.parameter.branch || '');
+    } else if (action === 'updateVisit') {
+      result = handleUpdateVisit(Number(e.parameter.row), e.parameter.bank || '', e.parameter.branch || '', e.parameter.note || '', e.parameter.visitType || '');
+    } else if (action === 'deleteVisit') {
+      result = handleDeleteVisit(Number(e.parameter.row), e.parameter.bank || '', e.parameter.branch || '');
     } else if (action === 'getSellerInfo') {
       result = handleGetSellerInfo(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '');
     } else if (action === 'saveSellerFields') {
@@ -817,7 +824,7 @@ function handleRecordForSeller(bank, branch, seller, text, date) {
 }
 
 // 방문 지점 입력: 방문로그에만 기록 (판매자 정보 시트는 건드리지 않음)
-function handleLogVisit(bank, branch, date, visitType) {
+function handleLogVisit(bank, branch, date, visitType, note) {
   if (!String(bank || '').trim() || !String(branch || '').trim()) {
     return { ok: false, message: '은행과 지점을 선택해주세요.' };
   }
@@ -826,8 +833,68 @@ function handleLogVisit(bank, branch, date, visitType) {
   var resolvedBranch = resolveBranchName(rows, bank, branch);
   var dateLabel = resolveDateLabel(date);
   var logSheet = getSS().getSheetByName(SHEET_LOG);
-  logSheet.appendRow([dateLabel, bank, resolvedBranch, '', '', email, String(visitType || '지점방문').trim()]);
-  return { ok: true, dateLabel: dateLabel, bank: bank, branch: resolvedBranch };
+  logSheet.appendRow([dateLabel, bank, resolvedBranch, '', String(note || '').trim(), email, String(visitType || '지점방문').trim()]);
+  logSheet.getRange(logSheet.getLastRow(), 1, 1, 7).setWrap(true);
+  return { ok: true, dateLabel: dateLabel, bank: bank, branch: resolvedBranch, row: logSheet.getLastRow() };
+}
+
+// 한 지점의 방문 기록 목록(최근 순). 수정·삭제 대상을 고르기 위한 것이라 시트 행번호를 함께 준다.
+function handleBranchVisits(bank, branch) {
+  if (!String(bank || '').trim() || !String(branch || '').trim()) {
+    return { ok: false, message: '은행과 지점이 필요합니다.' };
+  }
+  var email = getCurrentUserEmail().toLowerCase();
+  var normBank = normalizeText(bank), normBranch = normalizeText(branch);
+  var logRows = readRowsCached(SHEET_LOG);
+  var visits = [];
+  for (var i = 1; i < logRows.length; i++) {
+    var r = logRows[i];
+    if (normalizeText(r[1]) !== normBank || normalizeText(r[2]) !== normBranch) continue;
+    var rowEmail = String(r[5] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    visits.push({
+      row: i + 1,
+      날짜: String(r[0] || ''),
+      판매자명: String(r[3] || '').trim(),
+      내용: String(r[4] || ''),
+      방문유형: String(r[6] || '').trim() || '지점방문'
+    });
+  }
+  visits.reverse(); // 최근 기록이 위로
+  return { ok: true, visits: visits.slice(0, 30) };
+}
+
+// 방문로그의 한 행을 찾아, 정말 그 지점의 내 기록이 맞는지 확인한 뒤에만 손댄다.
+// 다른 사람이 그 사이에 행을 지웠다면 행번호가 밀려 엉뚱한 기록을 건드리게 되므로 반드시 대조한다.
+function _findVerifiedVisitRow(row, bank, branch) {
+  if (!row || row < 2) return { error: '잘못된 기록입니다.' };
+  var logRows = readRows(SHEET_LOG);
+  if (row > logRows.length) return { error: '기록을 찾을 수 없습니다. 새로고침 후 다시 시도해주세요.' };
+  var r = logRows[row - 1];
+  if (normalizeText(r[1]) !== normalizeText(bank) || normalizeText(r[2]) !== normalizeText(branch)) {
+    return { error: '기록이 변경되었습니다. 새로고침 후 다시 시도해주세요.' };
+  }
+  var email = getCurrentUserEmail().toLowerCase();
+  var rowEmail = String(r[5] || '').trim().toLowerCase();
+  if (email && rowEmail && rowEmail !== email) return { error: '다른 담당자의 기록입니다.' };
+  return { row: row };
+}
+
+function handleUpdateVisit(row, bank, branch, note, visitType) {
+  var v = _findVerifiedVisitRow(row, bank, branch);
+  if (v.error) return { ok: false, message: v.error };
+  var logSheet = getSS().getSheetByName(SHEET_LOG);
+  logSheet.getRange(v.row, 5).setValue(String(note || '').trim());
+  if (String(visitType || '').trim()) logSheet.getRange(v.row, 7).setValue(String(visitType).trim());
+  logSheet.getRange(v.row, 1, 1, 7).setWrap(true);
+  return { ok: true };
+}
+
+function handleDeleteVisit(row, bank, branch) {
+  var v = _findVerifiedVisitRow(row, bank, branch);
+  if (v.error) return { ok: false, message: v.error };
+  getSS().getSheetByName(SHEET_LOG).deleteRow(v.row);
+  return { ok: true };
 }
 
 // 판매자 드롭다운 선택 시 현재 저장된 정보를 로드해 필드를 채워주기 위한 조회
