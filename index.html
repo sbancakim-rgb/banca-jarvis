@@ -250,7 +250,7 @@
   /* 지점 상세 팝업 */
   .md-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
   .md-seller { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; background: #f8fafc; }
-  .md-seller-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .md-seller-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 4px; }
   .md-seller-name .pos { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px; }
   .md-field { font-size: 13px; line-height: 1.55; margin-top: 5px; }
   .md-field .lbl { display: inline-block; min-width: 62px; font-weight: 700; color: var(--primary); }
@@ -2083,18 +2083,86 @@
           (mapDetailDiag ? `<div style="font-size:10.5px;color:#94a3b8;margin-top:8px;word-break:break-all;">${escapeHtml(mapDetailDiag)}</div>` : '');
         return;
       }
-      body.innerHTML = sellers.map(s => {
+      body.innerHTML = sellers.map((s, i) => {
         const fields = FIELD_LABELS.map(([key, label]) => {
           const v = (s[key] || '').trim();
           return `<div class="md-field${v ? '' : ' empty'}">` +
                  `<span class="lbl">${label}</span>` +
                  `<span class="val">${v ? escapeHtml(v) : '정보 없음'}</span></div>`;
         }).join('');
-        return `<div class="md-seller">` +
+        return `<div class="md-seller" data-idx="${i}">` +
                `<div class="md-seller-name">${escapeHtml(s.판매자명)}` +
-               (s.직책 ? `<span class="pos">${escapeHtml(s.직책)}</span>` : '') + `</div>` +
+               (s.직책 ? `<span class="pos">${escapeHtml(s.직책)}</span>` : '') +
+               `<span class="mv-actions"><button class="md-edit-btn">수정</button></span></div>` +
                fields + `</div>`;
       }).join('');
+
+      body.querySelectorAll('.md-seller').forEach(card => {
+        const s = sellers[Number(card.dataset.idx)];
+        card.querySelector('.md-edit-btn').onclick = () => startEditSeller(card, s, sellers);
+      });
+    }
+
+    // 판매자 정보를 팝업에서 그 자리에 고친다. 저장은 '판매자 정보' 카드와 같은 경로(saveSellerFields)를
+    // 쓰므로 어느 쪽에서 고치든 결과가 같다. (연.월) 태그도 같은 규칙으로 붙는다.
+    function startEditSeller(card, seller, sellers) {
+      if (card.querySelector('.md-edit-area')) return; // 이미 편집 중
+      const bank = mapLogTarget && mapLogTarget.bank;
+      const branch = mapLogTarget && mapLogTarget.branch;
+      if (!bank || !branch) { alert('지점 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'); return; }
+
+      card.querySelectorAll('.md-field').forEach(el => el.style.display = 'none');
+      card.querySelector('.md-edit-btn').style.display = 'none';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'md-edit-area';
+      const areas = {};
+      FIELD_LABELS.forEach(([key, label]) => {
+        const row = document.createElement('div');
+        row.style.marginTop = '6px';
+        const lb = document.createElement('div');
+        lb.style.cssText = 'font-size:11.5px;font-weight:700;color:var(--primary);margin-bottom:2px;';
+        lb.textContent = label;
+        const ta = document.createElement('textarea');
+        ta.className = 'mv-edit'; ta.rows = 2;
+        ta.value = seller[key] || '';
+        ta.dataset.initial = seller[key] || '';
+        areas[key] = ta;
+        row.appendChild(lb); row.appendChild(ta); wrap.appendChild(row);
+      });
+      const save = document.createElement('button');
+      save.className = 'btn-primary'; save.style.marginTop = '8px'; save.textContent = '저장';
+      const cancel = document.createElement('button');
+      cancel.className = 'btn-neutral'; cancel.style.marginTop = '6px'; cancel.textContent = '취소';
+      wrap.appendChild(save); wrap.appendChild(cancel);
+      card.appendChild(wrap);
+
+      const restore = () => {
+        wrap.remove();
+        card.querySelectorAll('.md-field').forEach(el => el.style.display = '');
+        card.querySelector('.md-edit-btn').style.display = '';
+      };
+      cancel.onclick = restore;
+
+      save.onclick = () => {
+        save.disabled = true; save.textContent = '저장 중...';
+        const payload = { bank, branch, seller: seller.판매자명, date: todayLocalISO() };
+        FIELD_LABELS.forEach(([key]) => { payload[key] = buildTaggedValue(areas[key]); });
+        jsonpRequest(getUrl(), { action: 'saveSellerFields', data: JSON.stringify(payload) }, d => {
+          if (!d || d.error || d.ok === false) {
+            save.disabled = false; save.textContent = '저장';
+            alert('오류: ' + ((d && (d.error || d.message)) || '저장하지 못했습니다'));
+            return;
+          }
+          FIELD_LABELS.forEach(([key]) => { seller[key] = payload[key]; });
+          const k = mapLogTarget.point.k;
+          if (mapDetailCache[k]) {
+            mapDetailCache[k].sellers = sellers;
+            cacheSave('detail:' + k, mapDetailCache[k]);
+          }
+          renderMapDetail(sellers);
+        });
+      };
     }
 
     function showMapInfo(point, info) {
