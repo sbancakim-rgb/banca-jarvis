@@ -133,7 +133,7 @@ var MUTATING_ACTIONS = {
   updateSellerName: true, addNewSeller: true, deleteSeller: true,
   login: true, addTask: true, editTask: true, completeTask: true,
   moveTask: true, setTaskAlarm: true, deleteCompletedTask: true,
-  updateVisit: true, deleteVisit: true
+  updateVisit: true, deleteVisit: true, setPriority: true
 };
 
 // 일회성 유틸: 판매자정보 시트 K열(영업대상 체크박스) 308행부터 마지막행까지 체크박스로 채움.
@@ -190,6 +190,8 @@ function doGet(e) {
       result = handleRecordForSeller(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '', e.parameter.text || '', e.parameter.date || '');
     } else if (action === 'logVisit') {
       result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '', e.parameter.visitType || '', e.parameter.note || '');
+    } else if (action === 'setPriority') {
+      result = handleSetPriority(e.parameter.key || '', e.parameter.low === '1');
     } else if (action === 'branchVisits') {
       result = handleBranchVisits(e.parameter.bank || '', e.parameter.branch || '');
     } else if (action === 'updateVisit') {
@@ -1396,8 +1398,11 @@ function handleBootstrap() {
 // 이번 달 방문 여부를 얹어서 지도에 그린다.
 // 좌표 수집(importBranchAddresses/geocodeAll)은 Apps Script 편집기에서 직접 실행한다.
 
-var GEO_HEADERS = ['지점키', '은행명', '지점명', '위도', '경도', '상태', '주소', '좌표출처', '매칭결과', '갱신일시'];
-var GEO_COL_COUNT = 10;
+// K열(후순위): 굳이 방문하지 않아도 되는 지점 표시. 지점위치 시트는 지점당 1행이라
+// 지점 단위 표시를 두기에 알맞다(판매자정보는 판매자당 1행이라 지점 단위 값이 중복된다).
+var GEO_HEADERS = ['지점키', '은행명', '지점명', '위도', '경도', '상태', '주소', '좌표출처', '매칭결과', '갱신일시', '후순위'];
+var GEO_COL_COUNT = 11;
+var GEO_COL_PRIORITY = 11; // K열 (1-based)
 
 // 지점을 식별하는 표준 키. 코드 전체가 이 형식을 쓴다.
 function branchKey(bank, branch) {
@@ -1552,7 +1557,8 @@ function readGeoByKey() {
     var lat = Number(rows[i][3]);
     var lng = Number(rows[i][4]);
     if (!isValidKoreaCoord(lat, lng)) continue;
-    map[key] = { lat: lat, lng: lng };
+    var low = rows[i][10] === true || String(rows[i][10] || '').toUpperCase() === 'TRUE';
+    map[key] = { lat: lat, lng: lng, low: low };
   }
   return map;
 }
@@ -1570,7 +1576,7 @@ function handleMapData() {
     var t = targets[i];
     var g = geo[t.key];
     if (!g) { missing.push({ 은행명: t.은행명, 지점명: t.지점명 }); continue; }
-    points.push({ k: t.key, lat: g.lat, lng: g.lng, v: visitState[t.key] || 0 });
+    points.push({ k: t.key, lat: g.lat, lng: g.lng, v: visitState[t.key] || 0, p: g.low ? 1 : 0 });
   }
 
   return {
@@ -1702,6 +1708,20 @@ function handleBranchDetail(bank, branch, key) {
     });
   }
   return { ok: true, 은행명: bank, 지점명: branch, sellers: sellers };
+}
+
+// 지점을 후순위로 표시하거나 해제한다. 지점위치 시트 K열.
+function handleSetPriority(key, low) {
+  key = String(key || '').trim();
+  if (!key) return { ok: false, message: '지점을 찾을 수 없습니다.' };
+  var sheet = getGeoSheet();
+  var rows = readRows(SHEET_GEO);
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() !== key) continue;
+    sheet.getRange(i + 1, GEO_COL_PRIORITY).setValue(low ? true : '');
+    return { ok: true, key: key, low: !!low };
+  }
+  return { ok: false, message: '지점 위치 정보가 없어 표시할 수 없습니다.' };
 }
 
 // 좌표 수집이 잘 됐는지 확인용(읽기 전용). 상태별 개수와 표본을 돌려준다.
@@ -1890,7 +1910,7 @@ function syncGeoSheet() {
   var all = listAllBranchesForGeo();
   for (var j = 0; j < all.length; j++) {
     if (have[all[j].key]) continue;
-    toAdd.push([all[j].key, all[j].은행명, all[j].지점명, '', '', '', '', '', '', '']);
+    toAdd.push([all[j].key, all[j].은행명, all[j].지점명, '', '', '', '', '', '', '', '']);
   }
   if (toAdd.length) {
     sheet.getRange(sheet.getLastRow() + 1, 1, toAdd.length, GEO_COL_COUNT).setValues(toAdd);

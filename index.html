@@ -214,6 +214,8 @@
   .branch-chip { font-size: 11px; font-weight: 700; padding: 5px 10px; border-radius: 999px; }
   .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
   .branch-chip.unvisited { background: #fee2e2; color: #b91c1c; }
+  .branch-chip.low { background: #e2e8f0; color: #475569; margin-left: 4px; }
+  .md-prio { width: auto; margin-left: 6px; padding: 4px 9px; font-size: 11px; border-radius: 999px; background: #eef2f7; color: var(--muted); }
 
   /* 지도 */
   .map-controls { display: flex; gap: 6px; margin-bottom: 8px; }
@@ -374,6 +376,9 @@
           <button id="mapViewAllBtn" class="task-toggle-btn active">전체</button>
           <button id="mapViewUnvisitedBtn" class="task-toggle-btn">미방문만</button>
           <button id="mapViewVisitedBtn" class="task-toggle-btn">방문만</button>
+        </div>
+        <div class="map-controls">
+          <button id="mapHideLowBtn" class="task-toggle-btn">후순위 숨기기</button>
         </div>
         <div class="map-controls">
           <button id="mapLocateBtn" class="btn-neutral" style="padding:9px 12px;">내 위치</button>
@@ -1812,7 +1817,7 @@
       sdkLoading: false, sdkReady: false, inited: false,
       data: null, map: null, clusterer: null,
       markers: [],            // { key, marker, v, bank }
-      viewFilter: 'all', bank: '', fullscreen: false, // 'all' | 'unvisited' | 'visited'
+      viewFilter: 'all', hideLow: false, bank: '', fullscreen: false, // 'all' | 'unvisited' | 'visited'
       myMarker: null, myCircle: null, labels: []
     };
 
@@ -1831,8 +1836,20 @@
     // 마커 이미지는 상태별로 3개만 만들어 수백 개 마커가 공유한다.
     // (CustomOverlay를 쓰면 DOM이 수백 개 생기고 클러스터링도 안 된다)
     const MAP_MARKER_IMAGES = {};
-    function mapMarkerImage(v) {
-      if (MAP_MARKER_IMAGES[v]) return MAP_MARKER_IMAGES[v];
+    function mapMarkerImage(v, low) {
+      // 후순위는 상태 색을 유지하되 작고 흐리게 그려서 눈에 덜 띄게 한다.
+      const cacheKey = v + (low ? 'L' : '');
+      if (MAP_MARKER_IMAGES[cacheKey]) return MAP_MARKER_IMAGES[cacheKey];
+      if (low) {
+        const stroke = v === 2 ? '#1d4ed8' : '#b91c1c';
+        const dash = v === 1 ? ' stroke-dasharray="2 2"' : '';
+        const lowSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" opacity="0.55">' +
+          '<circle cx="7.5" cy="7.5" r="5.5" fill="#fde047" stroke="' + stroke + '" stroke-width="2"' + dash + '/></svg>';
+        MAP_MARKER_IMAGES[cacheKey] = new kakao.maps.MarkerImage(
+          'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(lowSvg),
+          new kakao.maps.Size(15, 15), { offset: new kakao.maps.Point(7.5, 7.5) });
+        return MAP_MARKER_IMAGES[cacheKey];
+      }
       let svg, size;
       // 속은 전부 노란색으로 채워 지도 위에서 눈에 띄게 하고, 테두리 색으로 상태를 구분한다.
       size = 22;
@@ -1843,12 +1860,12 @@
       } else {              // 방문완료 = 파란 테두리 (지우지 않고 색만 바뀐다)
         svg = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><circle cx="11" cy="11" r="8" fill="#fde047" stroke="#1d4ed8" stroke-width="2.5"/></svg>';
       }
-      MAP_MARKER_IMAGES[v] = new kakao.maps.MarkerImage(
+      MAP_MARKER_IMAGES[cacheKey] = new kakao.maps.MarkerImage(
         'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
         new kakao.maps.Size(size, size),
         { offset: new kakao.maps.Point(size / 2, size / 2) }
       );
-      return MAP_MARKER_IMAGES[v];
+      return MAP_MARKER_IMAGES[cacheKey];
     }
 
     // 지점키 → { 은행명, 지점명, sellers }. 서버가 만든 키(k)로 조인한다.
@@ -2002,12 +2019,12 @@
         const parts = String(p.k || '').split('|');
         const marker = new kakao.maps.Marker({
           position: new kakao.maps.LatLng(p.lat, p.lng),
-          image: mapMarkerImage(p.v),
+          image: mapMarkerImage(p.v, p.p === 1),
           title: info ? info.은행명 + ' ' + info.지점명 : ''
         });
         kakao.maps.event.addListener(marker, 'click', () => showMapInfo(p, mapBranchInfo(p.k)));
         return {
-          key: p.k, marker, v: p.v,
+          key: p.k, marker, v: p.v, low: p.p === 1,
           // 지점 목록을 아직 못 받았어도 이름표가 비지 않도록 키에서 뽑아 쓴다
           bank: info ? info.은행명 : (parts[0] || ''),
           branch: info ? info.지점명 : (parts[1] || '')
@@ -2034,7 +2051,8 @@
       // 통화·제안서만 한 곳(v=1)은 아직 가봐야 하므로 '미방문만'에 포함시킨다.
       if (mapState.viewFilter === 'unvisited') stateOk = m.v < 2;
       else if (mapState.viewFilter === 'visited') stateOk = m.v === 2;
-      return bankOk && stateOk;
+      const lowOk = !mapState.hideLow || !m.low;
+      return bankOk && stateOk && lowOk;
     }
 
     function clearMapLabels() {
@@ -2091,11 +2109,13 @@
       const done = shown.filter(m => m.v === 2).length;
       const missing = (mapState.data && mapState.data.missing) ? mapState.data.missing.length : 0;
 
+      const lowCount = shown.filter(m => m.low).length;
       let note = `미방문 ${left}곳`;
       if (called) note += ` · 통화만 ${called}곳`;
       note += ` · 방문 ${done}곳 / 전체 ${shown.length}곳`;
       if (mapState.viewFilter === 'unvisited') note = '[미방문만 보는 중] ' + note;
       else if (mapState.viewFilter === 'visited') note = '[방문만 보는 중] ' + note;
+      if (lowCount) note += mapState.hideLow ? `  (후순위 ${lowCount}곳 숨김)` : `  (후순위 ${lowCount}곳 포함)`;
       if (missing) note += `  (위치 미등록 ${missing}곳은 표시되지 않음)`;
       document.getElementById('mapNote').textContent = note;
 
@@ -2212,8 +2232,12 @@
       const bank = info ? info.은행명 : '';
       const branch = info ? info.지점명 : '';
       const setHead = (b, n) => {
+        const lowOn = point.p === 1;
         head.innerHTML = `<div class="md-title">${escapeHtml(b || '')} ${escapeHtml(n || '')}</div>` +
-                         `<span class="branch-chip ${cls}">${label}</span>`;
+                         `<span class="branch-chip ${cls}">${label}</span>` +
+                         (lowOn ? `<span class="branch-chip low">후순위</span>` : '') +
+                         `<button id="mapPriorityBtn" class="md-prio">${lowOn ? '후순위 해제' : '후순위로 표시'}</button>`;
+        document.getElementById('mapPriorityBtn').onclick = () => toggleBranchPriority(point, b, n);
       };
       setHead(bank, branch || point.k);
       overlay.style.display = 'flex';
@@ -2419,6 +2443,31 @@
       });
     };
 
+    // 후순위 지정/해제. 저장이 끝난 뒤에만 화면을 바꾼다.
+    function toggleBranchPriority(point, bank, branch) {
+      const btn = document.getElementById('mapPriorityBtn');
+      const next = point.p === 1 ? 0 : 1;
+      btn.disabled = true; btn.textContent = '저장 중...';
+      jsonpRequest(getUrl(), { action: 'setPriority', key: point.k, low: next ? '1' : '0' }, d => {
+        btn.disabled = false;
+        if (!d || d.error || d.ok === false) {
+          btn.textContent = point.p === 1 ? '후순위 해제' : '후순위로 표시';
+          alert('오류: ' + ((d && (d.error || d.message)) || '저장하지 못했습니다'));
+          return;
+        }
+        point.p = next;
+        const m = mapState.markers.find(x => x.key === point.k);
+        if (m) { m.low = next === 1; m.marker.setImage(mapMarkerImage(m.v, m.low)); }
+        if (mapState.data && mapState.data.points) {
+          const pt = mapState.data.points.find(x => x.k === point.k);
+          if (pt) pt.p = next;
+          cacheSave('mapData', mapState.data);
+        }
+        applyMapFilter();
+        if (mapLogTarget && mapLogTarget.point.k === point.k) mapLogTarget.setHead(bank, branch);
+      });
+    }
+
     document.getElementById('mapDetailCloseBtn').onclick = closeMapDetail;
     document.getElementById('mapDetailOverlay').onclick = e => {
       if (e.target.id === 'mapDetailOverlay') closeMapDetail(); // 바깥을 누르면 닫힘
@@ -2474,6 +2523,12 @@
     MAP_VIEW_BUTTONS.forEach(([id, m]) => {
       document.getElementById(id).onclick = () => setMapView(m);
     });
+    document.getElementById('mapHideLowBtn').onclick = function () {
+      mapState.hideLow = !mapState.hideLow;
+      this.classList.toggle('active', mapState.hideLow);
+      this.textContent = mapState.hideLow ? '후순위 숨기는 중' : '후순위 숨기기';
+      applyMapFilter();
+    };
     document.getElementById('mapLocateBtn').onclick = mapLocateMe;
     document.getElementById('mapFullBtn').onclick = function () {
       mapState.fullscreen = !mapState.fullscreen;
