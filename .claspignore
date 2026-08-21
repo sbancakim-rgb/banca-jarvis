@@ -1,0 +1,10 @@
+# 서비스워커는 브라우저에서 도는 파일이다. Apps Script로 올라가면 서버가 이를
+# 서버 코드로 해석하려다 'self is not defined'로 프로젝트 전체가 멈춘다.
+sw.js
+**/*.tsv
+**/*.md
+**/*.bat
+**/*.png
+manifest.json
+node_modules/**
+.git/**
