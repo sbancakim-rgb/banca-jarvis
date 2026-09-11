@@ -215,6 +215,9 @@
   .branch-chip.visited { background: #dbeafe; color: #1d4ed8; }
   .branch-chip.unvisited { background: #fee2e2; color: #b91c1c; }
   .branch-chip.low { background: #e2e8f0; color: #475569; margin-left: 4px; }
+  .branch-chip.lowun { background: #e2e8f0; color: #64748b; }
+  .dash-legend { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; font-size: 10.5px; color: var(--muted); margin-bottom: 2px; }
+  .dash-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 3px; vertical-align: -1px; }
   .md-prio { width: auto; margin-left: 6px; padding: 4px 9px; font-size: 11px; border-radius: 999px; background: #eef2f7; color: var(--muted); }
 
   /* 지도 */
@@ -585,11 +588,15 @@
     <!-- ⑤ 이번 달 방문 현황 -->
     <div class="card">
       <h3>이번 달 방문 현황</h3>
+      <div class="map-controls">
+        <button id="dashTabTotal" class="task-toggle-btn active">총모수</button>
+        <button id="dashTabReal" class="task-toggle-btn">실질모수</button>
+      </div>
       <div id="dashboardSummary" class="dash-summary"></div>
       <button id="refreshDashboardBtn" class="btn-neutral" style="margin-bottom:10px;">↻ 새로고침</button>
       <button id="toggleDashboardListBtn" class="btn-neutral" style="margin-bottom:10px;">은행별 방문 현황 보기</button>
       <div id="dashboardList" style="display:none;"></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px;">모수: 판매자정보 시트 K열(영업대상) 체크 기준</div>
+      <div id="dashNote" style="font-size:11px;color:var(--muted);margin-top:4px;">모수: 판매자정보 시트 K열(영업대상) 체크 기준</div>
     </div>
 
     <details class="settings">
@@ -1411,41 +1418,69 @@
       return count;
     }
 
+    // 총모수: 영업대상 전체 / 실질모수: 지도에서 '후순위'로 표시한 지점을 뺀 것
+    let dashMode = 'total';
+    try { if (localStorage.getItem('bancaDashMode') === 'real') dashMode = 'real'; } catch (e) {}
+    let lastDashboard = null;
+
+    // 은행 하나의 통계. 지점 목록이 있으면 거기서 직접 센다(탭에 따라 후순위를 뺄 수 있도록).
+    function dashStats(b) {
+      if (!b.branches) return { 모수: b.모수, 당월방문: b.당월방문, 미방문: b.미방문, list: null, low: 0 };
+      const list = dashMode === 'real' ? b.branches.filter(br => !br.low) : b.branches;
+      const visited = list.filter(br => br.visited).length;
+      return { 모수: list.length, 당월방문: visited, 미방문: list.length - visited, list,
+               low: b.branches.filter(br => br.low).length };
+    }
+
     function renderDashboardSummary(banks) {
-      const totals = banks.reduce((a,b) => { a.모수+=b.모수; a.당월방문+=b.당월방문; a.미방문+=b.미방문; return a; }, {모수:0,당월방문:0,미방문:0});
+      const totals = banks.reduce((a,b) => { const st = dashStats(b);
+        a.모수+=st.모수; a.당월방문+=st.당월방문; a.미방문+=st.미방문; a.low+=st.low; return a; },
+        {모수:0,당월방문:0,미방문:0,low:0});
       const pct = totals.모수>0 ? Math.round((totals.당월방문/totals.모수)*100) : 0;
       const businessDays = countElapsedBusinessDays();
       const avgPerDay = businessDays>0 ? (totals.당월방문/businessDays).toFixed(1) : '0.0';
       dashboardSummary.innerHTML =
         '<div class="dash-summary-numbers">' +
-          '<div class="dash-summary-item total"><div class="num">'+totals.모수+'</div><div class="lbl">총 모수</div></div>' +
+          '<div class="dash-summary-item total"><div class="num">'+totals.모수+'</div><div class="lbl">'+(dashMode==='real'?'실질 모수':'총 모수')+'</div></div>' +
           '<div class="dash-summary-item visited"><div class="num">'+totals.당월방문+'</div><div class="lbl">방문</div></div>' +
           '<div class="dash-summary-item unvisited"><div class="num">'+totals.미방문+'</div><div class="lbl">미방문</div></div>' +
         '</div>' +
         '<div class="dash-summary-track"><div class="dash-summary-fill" style="width:'+pct+'%"></div></div>' +
         '<div class="dash-summary-extra"><span><b>'+pct+'%</b> 진행</span><span>영업일당 평균 방문수 <b>'+avgPerDay+'</b></span></div>';
+      const note = document.getElementById('dashNote');
+      if (note) note.textContent = dashMode === 'real'
+        ? '실질모수: 영업대상 중 지도에서 후순위로 표시한 ' + totals.low + '곳 제외'
+        : '총모수: 판매자정보 시트 K열(영업대상) 체크 기준' + (totals.low ? ' · 후순위 ' + totals.low + '곳 포함' : '');
     }
 
     function buildDashboardBank(b) {
       const wrap = document.createElement('div'); wrap.className = 'dash-bank';
       const name = document.createElement('div'); name.className = 'dash-bank-name'; name.textContent = b.은행명;
       wrap.appendChild(name);
+      const st = dashStats(b);
       const track = document.createElement('div'); track.className = 'dash-bar-track';
-      const pct = b.모수>0 ? Math.round((b.당월방문/b.모수)*100) : 0;
+      const pct = st.모수>0 ? Math.round((st.당월방문/st.모수)*100) : 0;
       const fill = document.createElement('div'); fill.className = 'dash-bar-fill'; fill.style.width = pct+'%';
-      const lbl = document.createElement('div'); lbl.className = 'dash-bar-label'; lbl.textContent = b.당월방문+' / '+b.모수+' ('+pct+'%)';
+      const lbl = document.createElement('div'); lbl.className = 'dash-bar-label'; lbl.textContent = st.당월방문+' / '+st.모수+' ('+pct+'%)';
       track.appendChild(fill); track.appendChild(lbl); wrap.appendChild(track);
       const stats = document.createElement('div'); stats.className = 'dash-stats';
-      stats.innerHTML = '<span>모수 '+b.모수+'</span><span>당월방문 '+b.당월방문+'</span><span>미방문 '+b.미방문+'</span>';
+      stats.innerHTML = '<span>'+(dashMode==='real'?'실질모수 ':'모수 ')+st.모수+'</span><span>당월방문 '+st.당월방문+'</span><span>미방문 '+st.미방문+'</span>' +
+        (st.low ? '<span>후순위 '+st.low+(dashMode==='real'?' 제외':'')+'</span>' : '');
       wrap.appendChild(stats);
       const detail = document.createElement('div'); detail.className = 'branch-detail'; detail.style.display = 'none';
       wrap.appendChild(detail);
       function renderBranchChips(list) {
         detail.innerHTML = '';
         if (!list || list.length === 0) { detail.textContent = '지점 정보 없음'; return; }
+        // 방문=파랑(후순위여도 동일), 미방문=빨강, 후순위인데 미방문=회색(굳이 안 가도 되는 곳)
+        const hasLow = list.some(br => br.low && !br.visited);
+        const legend = document.createElement('div'); legend.className = 'dash-legend';
+        legend.innerHTML = '<span><i style="background:#1d4ed8"></i>방문</span><span><i style="background:#b91c1c"></i>미방문</span>' +
+          (hasLow ? '<span><i style="background:#94a3b8"></i>후순위·미방문</span>' : '');
+        detail.appendChild(legend);
         list.forEach(br => {
           const chip = document.createElement('span');
-          chip.className = 'branch-chip '+(br.visited?'visited':'unvisited');
+          chip.className = 'branch-chip '+(br.visited ? 'visited' : (br.low ? 'lowun' : 'unvisited'));
           chip.textContent = br.지점명;
           detail.appendChild(chip);
         });
@@ -1459,7 +1494,7 @@
         detail.style.display = 'flex';
         if (loaded) return;
         loaded = true;
-        if (b.branches) { renderBranchChips(b.branches); return; }
+        if (b.branches) { renderBranchChips(st.list); return; }
         detail.textContent = '불러오는 중...';
         const url = getUrl();
         if (!url) { detail.textContent = 'URL을 먼저 입력하세요.'; return; }
@@ -1785,6 +1820,7 @@
     function applyDashboard(data) {
       if (!data) return;
       if (data.error) { dashboardList.textContent = '오류: ' + data.error; return; }
+      lastDashboard = data;
       dashboardList.innerHTML = '';
       if (!data.banks || data.banks.length === 0) { dashboardList.textContent = '영업대상으로 체크된 지점이 없습니다.'; return; }
       renderDashboardSummary(data.banks);
@@ -1797,6 +1833,32 @@
       dashboardSummary.innerHTML = '';
       dashboardList.textContent = '불러오는 중...';
       jsonpRequest(url, { action: 'dashboard' }, applyDashboard);
+    }
+
+    function setDashMode(mode) {
+      dashMode = mode;
+      try { localStorage.setItem('bancaDashMode', mode); } catch (e) {}
+      document.getElementById('dashTabTotal').classList.toggle('active', mode === 'total');
+      document.getElementById('dashTabReal').classList.toggle('active', mode === 'real');
+      if (lastDashboard) applyDashboard(lastDashboard);
+    }
+    document.getElementById('dashTabTotal').onclick = () => setDashMode('total');
+    document.getElementById('dashTabReal').onclick = () => setDashMode('real');
+    setDashMode(dashMode); // 지난번에 보던 탭 복원
+
+    // 지도에서 방문 입력/후순위 변경을 했을 때 대시보드도 서버 갱신을 기다리지 않고 맞춘다.
+    // 화면에 떠 있는 것과 기기 저장본 둘 다 고친다.
+    function patchDashboardBranch(key, bankName, branchName, fn) {
+      const targets = [];
+      if (lastDashboard) targets.push(lastDashboard);
+      const cachedBoot = cacheLoad('bootstrap');
+      if (cachedBoot && cachedBoot.dashboard) targets.push(cachedBoot.dashboard);
+      targets.forEach(d => (d.banks || []).forEach(b => (b.branches || []).forEach(br => {
+        const hit = br.k ? br.k === key : (b.은행명 === bankName && br.지점명 === branchName);
+        if (hit) fn(br, b);
+      })));
+      if (cachedBoot) cacheSave('bootstrap', cachedBoot);
+      if (lastDashboard) applyDashboard(lastDashboard);
     }
 
     const toggleDashboardListBtn = document.getElementById('toggleDashboardListBtn');
@@ -2394,19 +2456,12 @@
 
       // 대시보드는 별도 요청으로 받은 값이라, 갱신 전까지 지도와 숫자가 어긋나 보인다.
       // 이번 달 첫 접촉일 때만 방문/미방문 수를 옮겨준다.
-      if (wasUnvisited && m.bank) {
-        const cached = cacheLoad('bootstrap');
-        const banks = cached && cached.dashboard && cached.dashboard.banks;
-        if (banks) {
-          const b = banks.find(x => x.은행명 === m.bank);
-          if (b && b.미방문 > 0) {
-            b.미방문--; b.당월방문++;
-            const br = (b.branches || []).find(x => x.지점명 === m.branch);
-            if (br) br.visited = true;
-            cacheSave('bootstrap', cached);
-            applyDashboard(cached.dashboard);
-          }
-        }
+      if (wasUnvisited) {
+        patchDashboardBranch(key, m.bank, m.branch, (br, b) => {
+          if (br.visited) return;
+          br.visited = true;
+          if (b.미방문 > 0) { b.미방문--; b.당월방문++; }
+        });
       }
     }
 
@@ -2464,6 +2519,7 @@
           cacheSave('mapData', mapState.data);
         }
         applyMapFilter();
+        patchDashboardBranch(point.k, bank, branch, br => { br.low = next === 1; });
         if (mapLogTarget && mapLogTarget.point.k === point.k) mapLogTarget.setHead(bank, branch);
       });
     }

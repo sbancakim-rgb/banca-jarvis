@@ -1294,6 +1294,8 @@ function handleDashboard() {
 
   // 은행별 지점 상세(방문/미방문)까지 한 번에 담아 보낸다. 대시보드에서 은행을 눌렀을 때
   // dashboardBank를 은행마다 다시 호출하지 않아도 되도록(요청 N번 -> 0번).
+  // 지도에서 '후순위'로 표시한 지점. 프런트가 총모수/실질모수 두 가지로 계산할 수 있게 함께 싣는다.
+  var lowKeys = readLowPriorityKeys();
   var banks = Object.keys(targetBranchesByBank);
   var result = banks.map(function (bank) {
     var targetKeys = Object.keys(targetBranchesByBank[bank]);
@@ -1301,7 +1303,7 @@ function handleDashboard() {
     var branchList = targetKeys.map(function (k) {
       var visited = !!(visitedByBank[bank] && visitedByBank[bank][k]);
       if (visited) visitedTargetCount++;
-      return { 지점명: allBranchLabelByKey[k], visited: visited };
+      return { k: k, 지점명: allBranchLabelByKey[k], visited: visited, low: !!lowKeys[k] };
     }).sort(function (a, b) { return a.지점명.localeCompare(b.지점명, 'ko'); });
     return {
       은행명: bank,
@@ -1708,6 +1710,21 @@ function handleBranchDetail(bank, branch, key) {
     });
   }
   return { ok: true, 은행명: bank, 지점명: branch, sellers: sellers };
+}
+
+// 후순위로 표시된 지점키 모음. 좌표 상태와 무관하게 K열만 본다
+// (좌표를 못 찾은 지점도 시트에서 직접 후순위로 표시할 수 있으므로).
+function readLowPriorityKeys() {
+  var rows = readRowsCached(SHEET_GEO);
+  var out = {};
+  for (var i = 1; i < rows.length; i++) {
+    var v = rows[i][10];
+    if (v === true || String(v || '').toUpperCase() === 'TRUE') {
+      var key = String(rows[i][0] || '').trim();
+      if (key) out[key] = true;
+    }
+  }
+  return out;
 }
 
 // 지점을 후순위로 표시하거나 해제한다. 지점위치 시트 K열.
