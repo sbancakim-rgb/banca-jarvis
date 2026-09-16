@@ -126,6 +126,13 @@ function invalidateAllCaches() {
   _memFromCache = {};
 }
 
+// 앱이 보낸 요청ID(재시도해도 같은 값)를 사용자별 캐시 키로 만든다. 형식이 이상하면 쓰지 않는다.
+function opCacheKey(opId) {
+  opId = String(opId || '');
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(opId)) return '';
+  return 'OP:' + String(_requestUserEmail || '').toLowerCase() + ':' + opId;
+}
+
 // 시트를 변경하는 action 목록. 이 요청이 끝나면 캐시를 버린다.
 var MUTATING_ACTIONS = {
   commit: true, recordForSeller: true, logVisit: true, saveSellerFields: true,
@@ -133,7 +140,7 @@ var MUTATING_ACTIONS = {
   updateSellerName: true, addNewSeller: true, deleteSeller: true,
   login: true, addTask: true, editTask: true, completeTask: true,
   moveTask: true, setTaskAlarm: true, deleteCompletedTask: true,
-  updateVisit: true, deleteVisit: true, setPriority: true
+  updateVisit: true, deleteVisit: true, setPriority: true, reorderTasks: true
 };
 
 // 일회성 유틸: 판매자정보 시트 K열(영업대상 체크박스) 308행부터 마지막행까지 체크박스로 채움.
@@ -171,8 +178,23 @@ function doGet(e) {
   _requestUserEmail = verifyToken(e.parameter.token || '');
 
   var result;
+  var isWrite = !!MUTATING_ACTIONS[action];
+  var lock = null, opKey = '', replayed = false;
   try {
-    if (action === 'record') {
+    if (isWrite) {
+      // 쓰기는 한 번에 하나씩. 행 번호로 쓰는 코드가 많아서, 동시에 두 요청이 들어오면
+      // 서로의 행 계산을 어긋나게 할 수 있다. (여러 사람/여러 기기가 동시에 저장해도 안전)
+      lock = LockService.getScriptLock();
+      lock.waitLock(25000);
+      // 앱은 저장을 뒤에서 자동 재시도한다. 첫 요청이 실제로는 저장됐는데 응답만 못 받은 경우
+      // 같은 요청ID로 다시 오므로, 이미 처리한 결과를 돌려주고 시트는 건드리지 않는다.
+      opKey = opCacheKey(e.parameter.opId);
+      var prev = opKey ? CacheService.getScriptCache().get(opKey) : null;
+      if (prev) { result = JSON.parse(prev); replayed = true; }
+    }
+    if (replayed) {
+      // 이미 처리된 요청의 재전송 — 아무것도 하지 않는다
+    } else if (action === 'record') {
       result = handleParse(text); // 음성을 항목별로 구조화만 함. 시트에는 아직 안 씀.
     } else if (action === 'reparse') {
       result = handleReparse(e.parameter.original || '', e.parameter.correction || '');
@@ -189,7 +211,7 @@ function doGet(e) {
     } else if (action === 'recordForSeller') {
       result = handleRecordForSeller(e.parameter.bank || '', e.parameter.branch || '', e.parameter.seller || '', e.parameter.text || '', e.parameter.date || '');
     } else if (action === 'logVisit') {
-      result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '', e.parameter.visitType || '', e.parameter.note || '');
+      result = handleLogVisit(e.parameter.bank || '', e.parameter.branch || '', e.parameter.date || '', e.parameter.visitType || '', e.parameter.note || '', e.parameter.opId || '');
     } else if (action === 'setPriority') {
       result = handleSetPriority(e.parameter.key || '', e.parameter.low === '1');
     } else if (action === 'branchVisits') {
@@ -232,6 +254,10 @@ function doGet(e) {
       result = handleCompleteTask(e.parameter.id || '');
     } else if (action === 'moveTask') {
       result = handleMoveTask(e.parameter.id || '', e.parameter.direction || '');
+    } else if (action === 'reorderTasks') {
+      result = handleReorderTasks(JSON.parse(e.parameter.ids || '[]'));
+    } else if (action === 'sellerDump') {
+      result = handleSellerDump();
     } else if (action === 'setTaskAlarm') {
       result = handleSetTaskAlarm(e.parameter.id || '', e.parameter.alarm || '');
     } else if (action === 'listCompletedTasks') {
@@ -266,9 +292,16 @@ function doGet(e) {
   }
 
   // 시트를 바꾼 요청이면, 변경 내용을 확실히 반영시킨 뒤 캐시를 버린다.
-  if (MUTATING_ACTIONS[action]) {
-    try { SpreadsheetApp.flush(); } catch (e2) {}
-    invalidateAllCaches();
+  if (isWrite) {
+    if (!replayed) {
+      try { SpreadsheetApp.flush(); } catch (e2) {}
+      invalidateAllCaches();
+      // 성공한 결과만 기억한다. 실패는 다시 시도할 수 있어야 하므로 남기지 않는다.
+      if (opKey && result && !result.error && result.ok !== false) {
+        try { CacheService.getScriptCache().put(opKey, JSON.stringify(result), 21600); } catch (e3) {}
+      }
+    }
+    if (lock) { try { lock.releaseLock(); } catch (e4) {} }
   }
 
   var body = callback ? callback + '(' + JSON.stringify(result) + ')' : JSON.stringify(result);
@@ -826,7 +859,10 @@ function handleRecordForSeller(bank, branch, seller, text, date) {
 }
 
 // 방문 지점 입력: 방문로그에만 기록 (판매자 정보 시트는 건드리지 않음)
-function handleLogVisit(bank, branch, date, visitType, note) {
+var LOG_OPID_COL = 8;            // 방문로그 H열: 앱이 보낸 요청ID (중복 저장 방지용)
+var LOG_OPID_HEADER = '요청ID';
+
+function handleLogVisit(bank, branch, date, visitType, note, opId) {
   if (!String(bank || '').trim() || !String(branch || '').trim()) {
     return { ok: false, message: '은행과 지점을 선택해주세요.' };
   }
@@ -835,7 +871,28 @@ function handleLogVisit(bank, branch, date, visitType, note) {
   var resolvedBranch = resolveBranchName(rows, bank, branch);
   var dateLabel = resolveDateLabel(date);
   var logSheet = getSS().getSheetByName(SHEET_LOG);
-  logSheet.appendRow([dateLabel, bank, resolvedBranch, '', String(note || '').trim(), email, String(visitType || '지점방문').trim()]);
+
+  // H열을 요청ID 칸으로 쓸 수 있는지 확인한다. 이미 다른 용도로 쓰이고 있으면 건드리지 않는다.
+  opId = /^[A-Za-z0-9_-]{8,64}$/.test(String(opId || '')) ? String(opId) : '';
+  var useOpCol = false;
+  if (opId) {
+    if (logSheet.getMaxColumns() < LOG_OPID_COL) logSheet.insertColumnsAfter(logSheet.getMaxColumns(), LOG_OPID_COL - logSheet.getMaxColumns());
+    var head = logSheet.getRange(1, LOG_OPID_COL).getValue();
+    if (head === '' || head === null) { logSheet.getRange(1, LOG_OPID_COL).setValue(LOG_OPID_HEADER); head = LOG_OPID_HEADER; }
+    useOpCol = String(head) === LOG_OPID_HEADER;
+    if (useOpCol && logSheet.getLastRow() > 1) {
+      var found = logSheet.getRange(2, LOG_OPID_COL, logSheet.getLastRow() - 1, 1)
+        .createTextFinder(opId).matchEntireCell(true).findNext();
+      if (found) {
+        // 같은 요청이 이미 저장돼 있다(응답만 못 받고 재시도된 경우) — 다시 쓰지 않는다
+        return { ok: true, dateLabel: dateLabel, bank: bank, branch: resolvedBranch, row: found.getRow(), duplicate: true };
+      }
+    }
+  }
+
+  var newRow = [dateLabel, bank, resolvedBranch, '', String(note || '').trim(), email, String(visitType || '지점방문').trim()];
+  if (useOpCol) newRow.push(opId);
+  logSheet.appendRow(newRow);
   logSheet.getRange(logSheet.getLastRow(), 1, 1, 7).setWrap(true);
   return { ok: true, dateLabel: dateLabel, bank: bank, branch: resolvedBranch, row: logSheet.getLastRow() };
 }
@@ -897,6 +954,31 @@ function handleDeleteVisit(row, bank, branch) {
   if (v.error) return { ok: false, message: v.error };
   getSS().getSheetByName(SHEET_LOG).deleteRow(v.row);
   return { ok: true };
+}
+
+// 내 담당 판매자의 정보 전체. 키는 앱의 지점목록과 같은 규칙(지점키|판매자명)으로 만든다.
+// 값: [직책, 가족관계, 자택, 판매성향, 방문이력, 기타대화내용]
+function handleSellerDump() {
+  var email = getCurrentUserEmail().toLowerCase();
+  var rows = readRowsCached(SHEET_SELLER);
+  var bankCol = fillMergedColumn(rows, 1);
+  var branchCol = fillMergedColumn(rows, 2);
+  var out = {};
+  for (var i = 1; i < rows.length; i++) {
+    if (isHeaderEchoRow(rows, i)) continue;
+    var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    var bank = String(bankCol[i] || '').trim();
+    var branch = String(branchCol[i] || '').trim();
+    var name = String(rows[i][3] || '').trim();
+    if (!bank || !branch || !name) continue;
+    var key = branchKey(bank, branch) + '|' + name;
+    if (out[key]) continue; // 같은 판매자가 두 줄이면 첫 줄(조회와 같은 기준)
+    var r = rows[i];
+    out[key] = [String(r[4] || '').trim(), String(r[5] || '').trim(), String(r[6] || '').trim(),
+                String(r[7] || '').trim(), String(r[8] || '').trim(), String(r[9] || '').trim()];
+  }
+  return { ok: true, sellers: out };
 }
 
 // 판매자 드롭다운 선택 시 현재 저장된 정보를 로드해 필드를 채워주기 위한 조회
@@ -2389,7 +2471,16 @@ function handleAddTask(data) {
     var o = Number(rows[i][1]) || 0;
     if (o > maxOrder) maxOrder = o;
   }
-  var id = Utilities.getUuid();
+  // 앱이 미리 id를 정해 보내면 그대로 쓴다(저장 전에도 화면에서 수정/완료할 수 있도록).
+  var id = String(data.id || '');
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) id = Utilities.getUuid();
+  for (var d = 1; d < rows.length; d++) {
+    if (String(rows[d][0]) === id) return { ok: true, id: id, duplicate: true };
+  }
+  var doneRows = readRows(SHEET_TASKS_DONE);
+  for (var d2 = 1; d2 < doneRows.length; d2++) {
+    if (String(doneRows[d2][0]) === id) return { ok: true, id: id, duplicate: true };
+  }
   var todayLabel = resolveDateLabel('');
   var targetType = String(data.targetType || '거래처') === '직접입력' ? '직접입력' : '거래처';
   sheet.appendRow([
@@ -2439,13 +2530,61 @@ function handleCompleteTask(id) {
     if (String(rows[i][0]) === id) {
       var r = rows[i];
       var doneSheet = getTasksDoneSheet();
-      var doneAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
-      doneSheet.appendRow([r[0], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], doneAt]);
+      // 완료 기록을 남긴 뒤 원본을 지우는 도중 끊겼다가 재시도되면 완료 기록이 두 번 생길 수 있다.
+      // 이미 완료 시트에 있으면 원본만 지운다.
+      var already = false;
+      var doneRows = readRows(SHEET_TASKS_DONE);
+      for (var k = 1; k < doneRows.length; k++) {
+        if (String(doneRows[k][0]) === id) { already = true; break; }
+      }
+      if (!already) {
+        var doneAt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+        doneSheet.appendRow([r[0], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], doneAt]);
+      }
       sheet.deleteRow(i + 1);
       return { ok: true };
     }
   }
+  // 이미 완료 처리된 업무면 성공으로 본다(재전송)
+  var doneRows2 = readRows(SHEET_TASKS_DONE);
+  for (var j = 1; j < doneRows2.length; j++) {
+    if (String(doneRows2[j][0]) === id) return { ok: true, duplicate: true };
+  }
   return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
+}
+
+// 업무 순서를 통째로 지정한다. 위/아래 이동을 여러 번 해도 마지막 순서만 반영되고,
+// 같은 요청이 두 번 와도 결과가 같다(한 칸 이동은 두 번 오면 원위치되는 문제가 있었다).
+// 목록에 없는 내 업무(다른 기기에서 추가한 것 등)는 기존 순서를 유지한 채 뒤에 둔다.
+function handleReorderTasks(ids) {
+  if (!ids || !ids.length) return { ok: true };
+  var email = getCurrentUserEmail().toLowerCase();
+  // 누구의 목록인지 모르면 모든 사람의 순서를 다시 매기게 되므로 거절한다
+  if (!email) return { ok: false, message: '로그인이 필요합니다.' };
+  var sheet = getTasksSheet();
+  var rows = readRows(SHEET_TASKS);
+  var mine = [];
+  for (var i = 1; i < rows.length; i++) {
+    var rowEmail = String(rows[i][11] || '').trim().toLowerCase();
+    if (email && rowEmail && rowEmail !== email) continue;
+    if (!rows[i][0]) continue;
+    mine.push({ idx: i, id: String(rows[i][0]), order: Number(rows[i][1]) || 0 });
+  }
+  mine.sort(function (a, b) { return a.order - b.order; });
+  var pos = {};
+  ids.forEach(function (id, n) { pos[String(id)] = n; });
+  var listed = mine.filter(function (t) { return pos[t.id] !== undefined; })
+                   .sort(function (a, b) { return pos[a.id] - pos[b.id]; });
+  var rest = mine.filter(function (t) { return pos[t.id] === undefined; });
+  var ordered = listed.concat(rest);
+  if (!ordered.length) return { ok: true };
+
+  // 순서 열(B)을 한 번에 읽고 한 번에 쓴다. 다른 사람의 행 값은 그대로 둔다.
+  var colRange = sheet.getRange(2, 2, rows.length - 1, 1);
+  var col = colRange.getValues();
+  ordered.forEach(function (t, n) { col[t.idx - 1][0] = n + 1; });
+  colRange.setValues(col);
+  return { ok: true };
 }
 
 // 업무 우선순위 위/아래 이동: 같은 사용자 목록 내에서 인접한 항목과 순서값을 교체
@@ -2522,7 +2661,7 @@ function handleDeleteCompletedTask(id) {
       return { ok: true };
     }
   }
-  return { ok: false, message: '해당 업무를 찾을 수 없습니다.' };
+  return { ok: true, duplicate: true }; // 이미 지워진 기록(재전송)
 }
 
 function callClaudeText(prompt) {

@@ -88,6 +88,20 @@
   .btn-primary { background: var(--primary); }
   .btn-primary:hover { background: var(--primary-dark); }
   .btn-neutral { background: var(--neutral); }
+  .outbox-badge { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 140;
+    padding: 8px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700; box-shadow: 0 4px 14px rgba(15,23,42,0.18);
+    cursor: pointer; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+  .outbox-badge.busy { background: #dbeafe; color: #1d4ed8; }
+  .outbox-badge.wait { background: #fef3c7; color: #92400e; }
+  .outbox-badge.fail { background: #fee2e2; color: #b91c1c; }
+  .outbox-badge.done { background: #dcfce7; color: #15803d; }
+  .ob-item { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-top: 6px; font-size: 12.5px; }
+  .ob-item .ob-msg { color: #b91c1c; font-size: 11.5px; margin-top: 2px; }
+  .ob-item .ob-sub { color: var(--muted); font-size: 11px; margin-top: 2px; white-space: pre-wrap; }
+  .ob-item .ob-btns { display: flex; gap: 6px; margin-top: 6px; }
+  .ob-item .ob-btns button { width: auto; padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+  .pending-tag { font-size: 10.5px; color: #1d4ed8; font-weight: 600; margin-left: 4px; }
+  .mv-item.pending { border-style: dashed; background: #f8fafc; }
   .status-box {
     margin-top: 10px;
     font-size: 13px;
@@ -536,6 +550,14 @@
     </div>
 
     <!-- 지도 지점 상세 팝업 -->
+    <div id="outboxBadge" class="outbox-badge" hidden></div>
+    <div id="outboxModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:160;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:18px;width:calc(100% - 32px);max-width:380px;max-height:calc(100% - 64px);overflow-y:auto;">
+        <div style="font-weight:700;font-size:15px;">저장 현황</div>
+        <div id="outboxModalList"></div>
+        <button id="outboxModalClose" class="btn-neutral" style="margin-top:12px;">닫기</button>
+      </div>
+    </div>
     <div id="mapDetailOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:150;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:16px;padding:18px;width:calc(100% - 32px);max-width:380px;max-height:calc(100% - 64px);overflow-y:auto;">
         <div id="mapDetailHead" style="margin-bottom:12px;"></div>
@@ -697,43 +719,7 @@
             if (res.firstTime) {
               alert('PIN이 설정되었습니다. 다음부터는 이 PIN으로 로그인하세요.');
             }
-            // ─── 오프라인 지원 ───────────────────────────────────────────────────────
-    // 한 번 받아두면 신호가 없어도 앱이 열린다. 화면은 저장된 내용으로 뜨고,
-    // 서버가 필요한 동작(입력/수정)만 연결될 때까지 기다린다.
-    function showNetBadge(text, color, bg) {
-      const el = document.getElementById('netBadge');
-      if (!el) return;
-      if (!text) { el.style.display = 'none'; return; }
-      el.textContent = text;
-      el.style.color = color; el.style.background = bg;
-      el.style.display = 'block';
-    }
-    function updateOnlineState() {
-      if (navigator.onLine) showNetBadge('', '', '');
-      else showNetBadge('오프라인 — 저장해둔 정보를 보고 있습니다', '#92400e', '#fef3c7');
-    }
-    window.addEventListener('online', updateOnlineState);
-    window.addEventListener('offline', updateOnlineState);
-    updateOnlineState();
-
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').then(reg => {
-          reg.addEventListener('updatefound', () => {
-            const sw = reg.installing;
-            if (!sw) return;
-            sw.addEventListener('statechange', () => {
-              // 이미 쓰고 있던 앱이 있을 때만 = 새 버전이 준비된 상황
-              if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-                showNetBadge('새 버전이 준비됐습니다 — 새로고침하세요', '#1d4ed8', '#dbeafe');
-              }
-            });
-          });
-        }).catch(() => { /* 지원 안 하는 환경이면 그냥 넘어간다 */ });
-      });
-    }
-
-    boot(); // 로그인 직후에도 첫 화면 데이터를 한 번에 불러온다
+            boot(); // 로그인 직후에도 첫 화면 데이터를 한 번에 불러온다
           } else if (res.error === 'wrong_pin') {
             msgEl.textContent = 'PIN이 올바르지 않습니다.';
           } else if (res.error === 'set_pin') {
@@ -822,6 +808,206 @@
       script.src = baseUrl + (baseUrl.includes('?') ? '&' : '?') + qs;
       script.onerror = () => { cleanup(); fail('요청 실패 (네트워크 또는 URL 확인)'); };
       document.body.appendChild(script);
+    }
+
+    // ─── 저장 대기열 ─────────────────────────────────────────────────────────
+    // Apps Script는 아무 일도 안 하는 요청도 왕복 1.8초가 든다(측정치). 저장할 때마다 그걸 기다리면
+    // 입력이 느릴 수밖에 없다. 그래서 저장은 ① 기기에 먼저 기록하고 ② 화면을 즉시 바꾼 뒤
+    // ③ 뒤에서 순서대로 서버에 보낸다.
+    // - 기기에 기록해 두므로 앱을 닫거나 신호가 끊겨도 저장이 사라지지 않고, 다시 열면 이어서 보낸다.
+    // - 요청마다 고유ID를 붙여, 응답을 못 받아 재전송해도 서버가 한 번만 저장한다.
+    // - 앞의 저장이 끝나야 다음 것을 보내므로 순서가 뒤바뀌지 않는다.
+    // - 서버가 거절한 저장은 버리지 않고 '저장 실패'로 남겨 확인·재시도할 수 있게 한다.
+    const OUTBOX_VERSION = 'v1';
+    function outboxOwner() { return getStoredToken().split('|')[0] || ''; }
+    function outboxStoreKey(kind) { return 'bancaOutbox:' + OUTBOX_VERSION + ':' + outboxOwner() + ':' + kind; }
+    function readJsonList(key) {
+      try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; }
+      catch (e) { return []; }
+    }
+    let outbox = [], outboxFailed = [], outboxLoadedFor = null;
+    let recentOps = [];      // 방금 끝난 저장(5분). 그보다 먼저 출발한 조회 응답이 늦게 와도 화면이 되돌아가지 않게 한다.
+    const opWatchers = {};
+    let pumpBusy = false, pumpTimer = null, outboxDoneFlash = null;
+
+    function outboxReload() {
+      const owner = outboxOwner();
+      if (owner === outboxLoadedFor) return;
+      outboxLoadedFor = owner;
+      outbox = owner ? readJsonList(outboxStoreKey('queue')) : [];
+      outboxFailed = owner ? readJsonList(outboxStoreKey('failed')) : [];
+      recentOps = [];
+      renderOutboxBadge();
+    }
+    function outboxPersist() {
+      if (!outboxLoadedFor) return;
+      try {
+        localStorage.setItem(outboxStoreKey('queue'), JSON.stringify(outbox));
+        localStorage.setItem(outboxStoreKey('failed'), JSON.stringify(outboxFailed));
+      } catch (e) { /* 저장 공간 문제는 드물다. 메모리의 대기열로 계속 전송한다 */ }
+    }
+    function newId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    }
+    function localDateLabel(iso) {
+      const [y, m, d] = String(iso || todayLocalISO()).split('-').map(Number);
+      return iso + '(' + WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()] + ')';
+    }
+
+    // 저장을 대기열에 넣는다. 화면 반영은 부른 쪽에서 곧바로 한다.
+    function enqueueWrite(action, params, label, meta) {
+      outboxReload();
+      const op = { id: newId(), action, params, label, meta: meta || {}, tries: 0, at: Date.now() };
+      outbox.push(op);
+      outboxPersist();
+      renderOutboxBadge();
+      pumpOutbox();
+      return op;
+    }
+    function onOpDone(opId, fn) { (opWatchers[opId] = opWatchers[opId] || []).push(fn); }
+    // 화면에 덧씌워야 할 저장들(오래된 것부터): 방금 끝난 것 + 아직 대기 중인 것
+    function pendingOps(action) {
+      const now = Date.now();
+      recentOps = recentOps.filter(op => now - op.doneAt < 5 * 60 * 1000);
+      return recentOps.concat(outbox).filter(op => !action || op.action === action);
+    }
+
+    function pumpOutbox() {
+      outboxReload();
+      clearTimeout(pumpTimer); pumpTimer = null;
+      if (pumpBusy || !outbox.length) { renderOutboxBadge(); return; }
+      if (!getStoredToken() || !getUrl()) { renderOutboxBadge(); return; } // 누구의 기록인지 모르면 보내지 않는다
+      if (navigator.onLine === false) { renderOutboxBadge(); return; }
+      pumpBusy = true;
+      renderOutboxBadge();
+      const op = outbox[0];
+      const owner = outboxLoadedFor;
+      jsonpRequest(getUrl(), { ...op.params, action: op.action, opId: op.id }, data => {
+        pumpBusy = false;
+        if (owner !== outboxLoadedFor || outbox[0] !== op) { pumpOutbox(); return; }
+        data = data || { error: '무응답', __net: true };
+        if (AUTH_FAILURES.has(data.error)) { renderOutboxBadge(); return; } // 다시 로그인하면 이어서 보낸다
+        // 통신 실패, 서버 일시 오류(예외)는 재시도. 서버가 명확히 거절(ok:false)한 것은 재시도하지 않는다.
+        const transient = data.__net || (data.error && data.ok !== false && data.error !== 'unknown action');
+        if (transient) {
+          op.tries++;
+          if (!data.__net && op.tries >= 8) { finishOp(op, data, data.error); return; }
+          outboxPersist(); renderOutboxBadge();
+          pumpTimer = setTimeout(pumpOutbox, Math.min(60000, 1500 * Math.pow(2, Math.min(op.tries, 6))));
+          return;
+        }
+        const failed = !!data.error || data.ok === false;
+        finishOp(op, data, failed ? String(data.message || data.error || '저장하지 못했습니다') : null);
+      });
+    }
+
+    function finishOp(op, data, errorMsg) {
+      outbox.shift();
+      if (errorMsg) outboxFailed.push(Object.assign({}, op, { message: errorMsg, failedAt: Date.now() }));
+      else recentOps.push(Object.assign({}, op, { doneAt: Date.now() }));
+      outboxPersist();
+      if (!errorMsg && !outbox.length) {
+        outboxDoneFlash = Date.now();
+        setTimeout(renderOutboxBadge, 1600);
+      }
+      renderOutboxBadge();
+      (opWatchers[op.id] || []).forEach(fn => { try { fn(data, errorMsg); } catch (e) {} });
+      delete opWatchers[op.id];
+      afterOpSettled(op);
+      // 거절된 저장은 화면에 미리 반영해 둔 상태가 틀린 것이므로 서버 기준으로 다시 맞춘다.
+      if (errorMsg) refreshFromServer();
+      pumpOutbox();
+    }
+
+    // 저장이 끝나면 '서버 저장 중' 표시를 걷어낸다
+    function afterOpSettled(op) {
+      try {
+        if (/Task/.test(op.action) || op.action === 'reorderTasks') renderTasks(tasksState);
+        if (op.action === 'logVisit' && calSelected && op.meta && op.meta.date === calSelected.dateStr &&
+            calSelected.cell.classList.contains('selected')) selectCalendarDate(calSelected.dateStr, calSelected.cell);
+      } catch (e) {}
+    }
+
+    function renderOutboxBadge() {
+      const el = document.getElementById('outboxBadge');
+      if (!el) return;
+      let text = '', cls = '';
+      if (outboxFailed.length) {
+        text = '⚠ 저장 실패 ' + outboxFailed.length + '건 — 눌러서 확인'; cls = 'fail';
+      } else if (outbox.length) {
+        const waiting = navigator.onLine === false || !getStoredToken() || outbox[0].tries > 0;
+        text = waiting ? '⏳ 저장 대기 ' + outbox.length + '건 · 연결되면 자동 저장' : '↻ 저장 중 ' + outbox.length + '건';
+        cls = waiting ? 'wait' : 'busy';
+      } else if (outboxDoneFlash && Date.now() - outboxDoneFlash < 1500) {
+        text = '✓ 서버 저장 완료'; cls = 'done';
+      }
+      el.hidden = !text;
+      el.textContent = text;
+      el.className = 'outbox-badge ' + cls;
+    }
+
+    function openOutboxModal() {
+      const list = document.getElementById('outboxModalList');
+      const when = t => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      let html = '';
+      if (outboxFailed.length) {
+        html += '<div style="font-size:12px;color:var(--muted);margin-top:6px;">서버가 받아들이지 않은 저장입니다. 내용을 확인하고 다시 시도하거나 버리세요.</div>';
+        html += outboxFailed.map((op, i) => `<div class="ob-item">
+            <div><b>${escapeHtml(op.label || op.action)}</b></div>
+            <div class="ob-sub">${escapeHtml(when(op.at))}${op.meta && op.meta.summary ? '\n' + escapeHtml(op.meta.summary) : ''}</div>
+            <div class="ob-msg">${escapeHtml(op.message || '')}</div>
+            <div class="ob-btns"><button class="btn-primary" data-retry="${i}">다시 시도</button><button class="btn-neutral" data-drop="${i}">버리기</button></div>
+          </div>`).join('');
+      }
+      if (outbox.length) {
+        html += '<div style="font-size:12px;color:var(--muted);margin-top:10px;">서버로 보내는 중인 저장 (기기에 보관되어 있어 앱을 닫아도 사라지지 않습니다)</div>';
+        html += outbox.map(op => `<div class="ob-item"><div>${escapeHtml(op.label || op.action)}</div>
+            <div class="ob-sub">${escapeHtml(when(op.at))}${op.tries ? ' · 재시도 ' + op.tries + '회' : ''}</div></div>`).join('');
+      }
+      if (!html) html = '<div class="md-empty">모든 저장이 서버에 반영되었습니다.</div>';
+      list.innerHTML = html;
+      list.querySelectorAll('[data-retry]').forEach(b => b.onclick = () => {
+        const op = outboxFailed.splice(Number(b.dataset.retry), 1)[0];
+        op.tries = 0; delete op.message; delete op.failedAt;
+        outbox.push(op); outboxPersist(); pumpOutbox(); openOutboxModal();
+      });
+      list.querySelectorAll('[data-drop]').forEach(b => b.onclick = () => {
+        if (!confirm('이 저장을 버릴까요? 서버에는 반영되지 않습니다.')) return;
+        outboxFailed.splice(Number(b.dataset.drop), 1); outboxPersist(); renderOutboxBadge(); openOutboxModal();
+      });
+      document.getElementById('outboxModal').style.display = 'flex';
+    }
+
+    // ─── 판매자 정보 보관본 ──────────────────────────────────────────────────
+    // 내 담당 판매자 정보 전체를 기기에 보관해 두고, 판매자를 고르면 서버를 기다리지 않고 바로 보여준다.
+    // 앱을 열 때마다 뒤에서 최신본을 한 번 받아 교체한다.
+    // 형식: { '지점키|판매자명': [직책, 가족관계, 자택, 판매성향, 방문이력, 기타대화내용] }
+    const SELLER_FIELD_ORDER = ['가족관계', '자택', '판매성향', '방문이력', '기타대화내용'];
+    let sellerStore = null, sellerStoreFresh = false;
+    function sellerKeyFor(bank, branch, seller) {
+      const e = branchListData.find(b => b.은행명 === bank && b.지점명 === branch);
+      return e && e.k && seller ? e.k + '|' + seller : null;
+    }
+    function persistSellerStore() { if (sellerStore) cacheSave('sellers', sellerStore); }
+    function applySellerSaveToStore(store, op) {
+      const key = op.meta && op.meta.key;
+      if (!store || !key) return;
+      let d; try { d = JSON.parse(op.params.data); } catch (e) { return; }
+      const cur = store[key] || [(op.meta && op.meta.title) || '', '', '', '', '', ''];
+      store[key] = [cur[0]].concat(SELLER_FIELD_ORDER.map(k => String(d[k] || '').trim()));
+    }
+    function loadSellerDump() {
+      if (!getStoredToken()) return;
+      jsonpRequest(getUrl(), { action: 'sellerDump' }, data => {
+        if (!data || data.error || !data.sellers) return;
+        const store = data.sellers;
+        pendingOps('saveSellerFields').forEach(op => applySellerSaveToStore(store, op));
+        sellerStore = store;
+        sellerStoreFresh = true;
+        persistSellerStore();
+        refreshOpenSellerForm();
+      });
     }
 
     // ─── 날짜 입력 초기화 ────────────────────────────────────────────────────
@@ -938,6 +1124,13 @@
       const url = getUrl();
       if (!url || !bank || !branch) return;
 
+      // 기기에 보관된 정보가 있으면 서버를 기다리지 않고 바로 채운다.
+      const key = sellerKeyFor(bank, branch, seller);
+      const stored = key && sellerStore ? sellerStore[key] : null;
+      document.getElementById('archiveRestoreBox').style.display = 'none';
+      if (stored) { fillSellerForm(bank, branch, seller, stored); return; }
+      if (key && sellerStore && sellerStoreFresh) { handleNoSellerData(bank, seller); return; }
+
       showStatus(loadStatus, '기존 정보 불러오는 중...');
       jsonpRequest(url, { action: 'getSellerInfo', bank, branch, seller }, data => {
         hideStatus(loadStatus);
@@ -959,13 +1152,76 @@
             document.getElementById('editTitleInput').value = title;
           }
         } else {
-          // 데이터 없는 신규 판매자 → 이전 담당자 정보 탐색
-          const selectedOpt = document.getElementById('sellerSelect').selectedOptions[0];
-          const titleFromDropdown = selectedOpt ? (selectedOpt.textContent.replace(seller, '').trim()) : '';
-          if (titleFromDropdown) document.getElementById('editTitleInput').value = titleFromDropdown;
-          checkArchive(bank, seller, titleFromDropdown);
+          handleNoSellerData(bank, seller);
         }
       });
+    }
+
+    // 데이터 없는 신규 판매자 → 이전 담당자 정보 탐색
+    function handleNoSellerData(bank, seller) {
+      const selectedOpt = document.getElementById('sellerSelect').selectedOptions[0];
+      const titleFromDropdown = selectedOpt ? (selectedOpt.textContent.replace(seller, '').trim()) : '';
+      if (titleFromDropdown) document.getElementById('editTitleInput').value = titleFromDropdown;
+      checkArchive(bank, seller, titleFromDropdown);
+    }
+
+    function fillSellerForm(bank, branch, seller, stored) {
+      SELLER_FIELD_ORDER.forEach((k, i) => {
+        const ta = document.getElementById('field_' + k);
+        const v = stored[i + 1] || '';
+        ta.value = v;
+        ta.dataset.initial = v;
+        ta.classList.toggle('has-data', !!v);
+        autoGrow(ta);
+      });
+      const title = stored[0] || '';
+      document.getElementById('sellerMeta').textContent = bank + ' ' + branch + ' · ' + seller + (title ? ' ' + title : '');
+      if (title) document.getElementById('editTitleInput').value = title;
+    }
+
+    // 최신 보관본이 도착했을 때, 열려 있는 판매자 폼을 아직 고치지 않았다면 최신 내용으로 바꿔 보여준다.
+    function refreshOpenSellerForm() {
+      if (document.getElementById('sellerFields').style.display === 'none') return;
+      const bank = document.getElementById('sellerBankSelect').value;
+      const branch = document.getElementById('sellerBranchSelect').value;
+      const seller = document.getElementById('sellerSelect').value;
+      const key = sellerKeyFor(bank, branch, seller);
+      const stored = key && sellerStore ? sellerStore[key] : null;
+      if (!stored) return;
+      const dirty = SELLER_FIELD_ORDER.some(k => {
+        const ta = document.getElementById('field_' + k);
+        return ta.value !== (ta.dataset.initial || '');
+      });
+      if (!dirty) fillSellerForm(bank, branch, seller, stored);
+    }
+
+    // 판매자 정보가 바뀌었을 때 지도 팝업의 보관본도 같이 고친다(다시 열었을 때 옛 내용이 보이지 않게).
+    function syncMapDetailSeller(key, fields) {
+      if (!key) return;
+      const cut = key.lastIndexOf('|');
+      const branchK = key.slice(0, cut), name = key.slice(cut + 1);
+      const d = mapDetailCache[branchK] || cacheLoad('detail:' + branchK);
+      if (!d || !d.sellers) return;
+      const s = d.sellers.find(x => x.판매자명 === name);
+      if (!s) return;
+      Object.assign(s, fields);
+      mapDetailCache[branchK] = d;
+      cacheSave('detail:' + branchK, d);
+    }
+
+    // 판매자 정보 저장(판매자 카드/지도 팝업 공용). 기기 보관본과 화면은 즉시 바뀌고 서버 저장은 뒤에서 한다.
+    function queueSellerSave(bank, branch, seller, payload, title) {
+      const key = sellerKeyFor(bank, branch, seller);
+      const summary = SELLER_FIELD_ORDER.map(k => payload[k] ? k + ': ' + payload[k] : '').filter(Boolean).join('\n');
+      const op = enqueueWrite('saveSellerFields', { data: JSON.stringify(payload) },
+        '판매자 정보 · ' + bank + ' ' + branch + ' ' + seller, { key, title: title || '', summary });
+      if (!sellerStore) sellerStore = {};
+      applySellerSaveToStore(sellerStore, op);
+      persistSellerStore();
+      const fields = {};
+      SELLER_FIELD_ORDER.forEach(k => { fields[k] = payload[k]; });
+      syncMapDetailSeller(key, fields);
+      return op;
     }
 
     const sellerPicker = makePicker(
@@ -1088,12 +1344,20 @@
       const statusEl = document.getElementById('visitStatus');
       if (!url)            { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
       if (!bank || !branch){ showStatus(statusEl, '은행과 지점을 모두 선택해주세요.', true); return; }
-      showStatus(statusEl, '입력 중...');
-      jsonpRequest(url, { action: 'logVisit', bank, branch, date, visitType }, data => {
-        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
-        showStatus(statusEl, `✓ ${data.dateLabel}  ${bank} ${branch}  (${visitType})  입력 완료`);
-      });
+      queueVisit(bank, branch, date, visitType, '');
+      showStatus(statusEl, `✓ ${localDateLabel(date)}  ${bank} ${branch}  (${visitType})  입력 완료`);
     };
+
+    // 방문 입력(방문 카드/지도 팝업 공용). 지도·대시보드는 즉시 바뀌고 서버 저장은 뒤에서 한다.
+    function queueVisit(bank, branch, date, visitType, note) {
+      const entry = branchListData.find(b => b.은행명 === bank && b.지점명 === branch);
+      const key = (entry && entry.k) || (mapLogTarget && mapLogTarget.bank === bank && mapLogTarget.branch === branch ? mapLogTarget.point.k : null);
+      const op = enqueueWrite('logVisit', { bank, branch, date, visitType, note: note || '' },
+        '방문 입력 · ' + localDateLabel(date) + ' ' + bank + ' ' + branch + ' (' + visitType + ')',
+        { key, bank, branch, date, visitType, note: note || '', summary: note || '' });
+      applyVisitLocally(key, visitType, bank, branch, date);
+      return op;
+    }
 
     // ─── ② 이름/직책 수정 ────────────────────────────────────────────────────
     function applyArchivedData(candidate) {
@@ -1163,6 +1427,8 @@
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
         showStatus(statusEl, '✓ 직책이 ' + data.newTitle + ' 으로 수정되었습니다.');
         localUpdateSeller(bank, branch, seller, { 직책: data.newTitle });
+        const tKey = sellerKeyFor(bank, branch, seller);
+        if (tKey && sellerStore && sellerStore[tKey]) { sellerStore[tKey][0] = data.newTitle; persistSellerStore(); }
         document.getElementById('sellerMeta').textContent =
           bank + ' ' + branch + ' · ' + seller + ' ' + data.newTitle;
         // 드롭다운 옵션 텍스트도 업데이트
@@ -1184,7 +1450,14 @@
       jsonpRequest(url, { action: 'updateSellerName', bank, branch, seller, newName }, data => {
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
         showStatus(statusEl, `✓ "${data.oldName}" → "${data.newName}" 교체 완료. 필드가 초기화되었습니다.`);
+        const oKey = sellerKeyFor(bank, branch, data.oldName);
         localUpdateSeller(bank, branch, data.oldName, { 판매자명: data.newName, 직책: '' });
+        if (sellerStore && oKey) {
+          delete sellerStore[oKey];
+          const nKey = sellerKeyFor(bank, branch, data.newName);
+          if (nKey) sellerStore[nKey] = ['', '', '', '', '', ''];
+          persistSellerStore();
+        }
         // 필드 초기화
         FIELD_KEYS.forEach(k => {
           const ta = document.getElementById('field_' + k);
@@ -1212,6 +1485,8 @@
       showStatus(statusEl, '삭제 중...');
       jsonpRequest(url, { action: 'deleteSeller', bank, branch, seller }, data => {
         if (!data.ok) { showStatus(statusEl, '오류: ' + (data.message || data.error), true); return; }
+        const dKey = sellerKeyFor(bank, branch, seller);
+        if (sellerStore && dKey) { delete sellerStore[dKey]; persistSellerStore(); }
         localRemoveSeller(bank, branch, seller);
         document.getElementById('sellerFields').style.display = 'none';
         sellerPicker.setBranch(branch); // 판매자 드롭다운 새로고침
@@ -1249,19 +1524,21 @@
       const statusEl = document.getElementById('sellerSaveStatus');
       if (!url)                  { showStatus(statusEl, '연결 설정에서 URL을 먼저 입력하세요.', true); return; }
       if (!bank || !branch || !seller) { showStatus(statusEl, '은행, 지점, 판매자를 모두 선택해주세요.', true); return; }
-      showStatus(statusEl, '저장 중...');
       const payload = { bank, branch, seller, date: todayLocalISO() };
       FIELD_KEYS.forEach(k => { payload[k] = buildTaggedValue(document.getElementById('field_' + k)); });
-      jsonpRequest(url, { action: 'saveSellerFields', data: JSON.stringify(payload) }, data => {
-        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
-        showStatus(statusEl, '✓ 저장 완료');
-        FIELD_KEYS.forEach(k => {
-          const ta = document.getElementById('field_' + k);
-          ta.value = payload[k];
-          ta.dataset.initial = payload[k];
-          if (ta.value) ta.classList.add('has-data');
-          autoGrow(ta);
-        });
+      const opt = document.getElementById('sellerSelect').selectedOptions[0];
+      const title = opt ? opt.textContent.replace(seller, '').trim() : '';
+      const op = queueSellerSave(bank, branch, seller, payload, title);
+      showStatus(statusEl, '✓ 저장 완료');
+      FIELD_KEYS.forEach(k => {
+        const ta = document.getElementById('field_' + k);
+        ta.value = payload[k];
+        ta.dataset.initial = payload[k];
+        ta.classList.toggle('has-data', !!ta.value);
+        autoGrow(ta);
+      });
+      onOpDone(op.id, (d, err) => {
+        if (err && document.getElementById('sellerSelect').value === seller) showStatus(statusEl, '서버 저장 실패: ' + err, true);
       });
     };
 
@@ -1334,7 +1611,9 @@
       }
     }
 
+    let calSelected = null;
     function selectCalendarDate(dateStr, cell) {
+      calSelected = { dateStr, cell };
       document.querySelectorAll('.cal-cell.selected').forEach(c => c.classList.remove('selected'));
       cell.classList.add('selected');
       const url = getUrl();
@@ -1342,9 +1621,11 @@
       calendarResult.textContent = '불러오는 중...';
       jsonpRequest(url, { action: 'calendarDay', date: dateStr }, data => {
         if (data.error) { calendarResult.textContent = '오류: ' + data.error; return; }
-        if (!data.visits || data.visits.length === 0) {
+        const pend = outbox.filter(op => op.action === 'logVisit' && op.meta && op.meta.date === dateStr);
+        if ((!data.visits || data.visits.length === 0) && !pend.length) {
           calendarResult.textContent = dateStr + ' 방문 기록이 없습니다.'; return;
         }
+        data.visits = data.visits || [];
         calendarResult.innerHTML = '';
         const header = document.createElement('div');
         header.style.cssText = 'font-weight:700;margin-bottom:10px;font-size:13.5px;';
@@ -1359,6 +1640,12 @@
           if (v.판매자명) branchMap.get(key).sellers.push(v);
         });
 
+        pend.forEach(op => {
+          const key = op.meta.bank + '|' + op.meta.branch;
+          if (!branchMap.has(key)) branchMap.set(key, { 은행명: op.meta.bank, 지점명: op.meta.branch, sellers: [], 방문유형: op.meta.visitType, pending: true });
+        });
+        header.textContent = '방문 ' + branchMap.size + '개 지점';
+
         let num = 1;
         branchMap.forEach(g => {
           const div = document.createElement('div');
@@ -1370,6 +1657,7 @@
           textEl.className = 'visit-text';
           textEl.innerHTML = '<strong>' + escapeHtml(g.은행명 + ' ' + g.지점명) + '</strong>' +
             (g.방문유형 ? ' <span class="visit-type-tag">(' + escapeHtml(g.방문유형) + ')</span>' : '');
+          if (g.pending) textEl.innerHTML += '<span class="pending-tag">서버 저장 중</span>';
           if (g.sellers.length > 0) {
             textEl.innerHTML += '<div class="visit-seller">' +
               g.sellers.map(s => escapeHtml(s.판매자명)).join(', ') + '</div>';
@@ -1381,7 +1669,7 @@
           delBtn.onclick = () => deleteVisitDay(dateStr, g.은행명, g.지점명, cell);
           div.appendChild(numEl);
           div.appendChild(textEl);
-          div.appendChild(delBtn);
+          if (!g.pending) div.appendChild(delBtn);
           calendarResult.appendChild(div);
         });
       });
@@ -1550,15 +1838,67 @@
         payload.targetText = targetText;
       }
 
-      showStatus(statusEl, '추가 중...');
-      jsonpRequest(url, { action: 'addTask', data: JSON.stringify(payload) }, data => {
-        if (data.error || data.ok === false) { showStatus(statusEl, '오류: ' + (data.error || data.message), true); return; }
-        hideStatus(statusEl);
-        document.getElementById('taskMemoInput').value = '';
-        if (taskTargetMode === '직접입력') taskTargetTextInput.value = '';
-        loadTasks();
-      });
+      payload.id = newId(); // 서버 저장 전에도 이 업무를 수정/완료할 수 있게 id를 미리 정한다
+      const label = payload.targetType === '직접입력' ? payload.targetText : payload.bank + ' ' + payload.branch;
+      commitTaskOp(enqueueWrite('addTask', { data: JSON.stringify(payload) }, '업무 추가 · ' + label,
+        { 입력일: localDateLabel(todayLocalISO()), summary: memo }));
+      hideStatus(statusEl);
+      document.getElementById('taskMemoInput').value = '';
+      if (taskTargetMode === '직접입력') taskTargetTextInput.value = '';
     };
+
+    // ── 업무 목록 상태 ──
+    // 서버에서 받은 목록 위에 아직 저장 중인 변경을 덧씌워 보여준다. 모든 변경은 여러 번 적용해도
+    // 결과가 같게 만들어서, 이미 반영된 변경을 다시 덧씌워도 문제가 없다.
+    let tasksState = [];
+    const TASK_EDIT_FIELDS = ['대상유형', '은행', '지점', '판매자명', '직책', '대상텍스트', '메모'];
+    function taskFromPayload(d) {
+      const biz = d.targetType !== '직접입력';
+      return {
+        id: d.id, 순서: 0, 입력일: '', 대상유형: biz ? '거래처' : '직접입력',
+        은행: biz ? String(d.bank || '').trim() : '', 지점: biz ? String(d.branch || '').trim() : '',
+        판매자명: biz ? String(d.seller || '').trim() : '', 직책: biz ? String(d.title || '').trim() : '',
+        대상텍스트: biz ? '' : String(d.targetText || '').trim(), 메모: String(d.memo || '').trim(),
+        알람일시: String(d.alarm || '').trim(), 담당자이메일: ''
+      };
+    }
+    function applyTaskOp(list, op) {
+      const p = op.params || {};
+      let d = null;
+      try { if (p.data) d = JSON.parse(p.data); } catch (e) { return list; }
+      if (op.action === 'addTask') {
+        if (d && !list.some(t => t.id === d.id)) list.push(Object.assign(taskFromPayload(d), { 입력일: (op.meta && op.meta.입력일) || '' }));
+      } else if (op.action === 'editTask') {
+        const t = list.find(x => x.id === p.id);
+        if (t && d) { const n = taskFromPayload(d); TASK_EDIT_FIELDS.forEach(k => { t[k] = n[k]; }); }
+      } else if (op.action === 'setTaskAlarm') {
+        const t = list.find(x => x.id === p.id);
+        if (t) t.알람일시 = p.alarm || '';
+      } else if (op.action === 'completeTask') {
+        return list.filter(x => x.id !== p.id);
+      } else if (op.action === 'reorderTasks') {
+        let ids = []; try { ids = JSON.parse(p.ids || '[]'); } catch (e) {}
+        const pos = {}; ids.forEach((id, i) => { pos[id] = i; });
+        const listed = list.filter(t => pos[t.id] !== undefined).sort((a, b) => pos[a.id] - pos[b.id]);
+        return listed.concat(list.filter(t => pos[t.id] === undefined));
+      }
+      return list;
+    }
+    // 방금 넣은 변경을 화면과 기기 보관본에 반영한다
+    function commitTaskOp(op) {
+      tasksState = applyTaskOp(tasksState.map(t => Object.assign({}, t)), op);
+      renderTasks(tasksState);
+      const cached = cacheLoad('bootstrap');
+      if (cached) { cached.tasks = { ok: true, tasks: tasksState }; cacheSave('bootstrap', cached); }
+    }
+    function pendingTaskIds() {
+      const ids = new Set();
+      outbox.forEach(op => {
+        if (op.params && op.params.id) ids.add(op.params.id);
+        if (op.action === 'addTask') { try { ids.add(JSON.parse(op.params.data).id); } catch (e) {} }
+      });
+      return ids;
+    }
 
     function taskTargetLine(t) {
       if (t.대상유형 === '직접입력') {
@@ -1577,6 +1917,7 @@
 
     function renderTasks(tasks) {
       const listEl = document.getElementById('taskList');
+      const pendingIds = pendingTaskIds();
       listEl.innerHTML = '';
       if (!tasks.length) { listEl.innerHTML = '<div style="font-size:12.5px;color:var(--muted);text-align:center;padding:8px;">등록된 업무가 없습니다.</div>'; return; }
       tasks.forEach((t, idx) => {
@@ -1586,7 +1927,7 @@
         div.innerHTML = `
           <div class="task-item-top">
             <div class="task-item-body">
-              <div class="task-item-date">${escapeHtml(t.입력일)}</div>
+              <div class="task-item-date">${escapeHtml(t.입력일)}${pendingIds.has(t.id) ? '<span class="pending-tag">서버 저장 중</span>' : ''}</div>
               <div>${taskTargetLine(t)}</div>
               <div class="task-item-memo">"${escapeHtml(t.메모)}"</div>
               ${alarmLabel ? `<div style="font-size:11px;color:var(--danger);margin-top:4px;">⏰ ${alarmLabel}</div>` : ''}
@@ -1613,7 +1954,10 @@
 
     function applyTasks(data) {
       if (!data || data.error || !data.tasks) return;
-      renderTasks(data.tasks);
+      let list = data.tasks.map(t => Object.assign({}, t));
+      pendingOps().forEach(op => { list = applyTaskOp(list, op); });
+      tasksState = list;
+      renderTasks(list);
     }
 
     function loadTasks() {
@@ -1624,19 +1968,33 @@
 
     function completeTask(id) {
       if (!confirm('해당 업무를 완료 하시겠습니까?')) return;
-      const url = getUrl();
-      jsonpRequest(url, { action: 'completeTask', id }, data => {
-        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
-        loadTasks();
-      });
+      const t = tasksState.find(x => x.id === id);
+      const label = t ? (t.대상유형 === '직접입력' ? t.대상텍스트 : t.은행 + ' ' + t.지점) : '';
+      const doneAt = new Date();
+      const doneLabel = todayLocalISO() + ' ' + String(doneAt.getHours()).padStart(2, '0') + ':' + String(doneAt.getMinutes()).padStart(2, '0');
+      commitTaskOp(enqueueWrite('completeTask', { id }, '업무 처리완료 · ' + label,
+        { task: t ? Object.assign({}, t, { 처리일시: doneLabel }) : null, summary: t ? t.메모 : '' }));
+      if (completedTasksLoaded && t) {
+        completedTasksAll.unshift(Object.assign({}, t, { 처리일시: doneLabel }));
+        renderCompletedTasksPage();
+      }
     }
 
     function moveTask(id, direction) {
-      const url = getUrl();
-      jsonpRequest(url, { action: 'moveTask', id, direction }, data => {
-        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
-        loadTasks();
-      });
+      const idx = tasksState.findIndex(t => t.id === id);
+      const j = direction === 'up' ? idx - 1 : idx + 1;
+      if (idx < 0 || j < 0 || j >= tasksState.length) return;
+      const ids = tasksState.map(t => t.id);
+      [ids[idx], ids[j]] = [ids[j], ids[idx]];
+      // 아직 출발하지 않은 순서 변경이 대기열 끝에 있으면 새 순서로 바꿔치기한다(여러 번 눌러도 요청은 한 번)
+      const last = outbox[outbox.length - 1];
+      if (last && last.action === 'reorderTasks' && !(pumpBusy && outbox[0] === last)) {
+        last.params.ids = JSON.stringify(ids);
+        outboxPersist();
+        commitTaskOp(last);
+        return;
+      }
+      commitTaskOp(enqueueWrite('reorderTasks', { ids: JSON.stringify(ids) }, '업무 순서 변경'));
     }
 
     // ─── 알람 설정 팝업 ───────────────────────────────────────────────────────
@@ -1656,20 +2014,14 @@
       if (!alarmTargetId) return;
       const url = getUrl();
       const alarm = alarmDateTimeInput.value;
-      jsonpRequest(url, { action: 'setTaskAlarm', id: alarmTargetId, alarm }, data => {
-        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
-        closeAlarmModal();
-        loadTasks();
-      });
+      commitTaskOp(enqueueWrite('setTaskAlarm', { id: alarmTargetId, alarm }, '업무 알람 설정'));
+      closeAlarmModal();
     };
     document.getElementById('alarmClearBtn').onclick = () => {
       if (!alarmTargetId) return;
       const url = getUrl();
-      jsonpRequest(url, { action: 'setTaskAlarm', id: alarmTargetId, alarm: '' }, data => {
-        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
-        closeAlarmModal();
-        loadTasks();
-      });
+      commitTaskOp(enqueueWrite('setTaskAlarm', { id: alarmTargetId, alarm: '' }, '업무 알람 해제'));
+      closeAlarmModal();
     };
 
     // ─── 업무 수정 팝업 ───────────────────────────────────────────────────────
@@ -1739,11 +2091,9 @@
         if (!targetText) { alert('대상을 입력해주세요.'); return; }
         payload.targetText = targetText;
       }
-      jsonpRequest(url, { action: 'editTask', id: taskEditTargetId, data: JSON.stringify(payload) }, data => {
-        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
-        closeTaskEditModal();
-        loadTasks();
-      });
+      commitTaskOp(enqueueWrite('editTask', { id: taskEditTargetId, data: JSON.stringify(payload) }, '업무 수정',
+        { summary: memo }));
+      closeTaskEditModal();
     };
 
     // ─── 완료된 업무 목록 (펼칠 때 1회 로드, 페이지네이션) ─────────────────────
@@ -1794,12 +2144,9 @@
 
     function deleteCompletedTask(id) {
       if (!confirm('이 완료 기록을 삭제하시겠습니까?')) return;
-      const url = getUrl();
-      jsonpRequest(url, { action: 'deleteCompletedTask', id }, data => {
-        if (data.error || data.ok === false) { alert('오류: ' + (data.error || data.message)); return; }
-        completedTasksAll = completedTasksAll.filter(t => t.id !== id);
-        renderCompletedTasksPage();
-      });
+      enqueueWrite('deleteCompletedTask', { id }, '완료 기록 삭제');
+      completedTasksAll = completedTasksAll.filter(t => t.id !== id);
+      renderCompletedTasksPage();
     }
 
     document.querySelector('.task-done-details').addEventListener('toggle', function () {
@@ -1809,9 +2156,15 @@
       const container = document.getElementById('completedTaskList');
       container.textContent = '불러오는 중...';
       jsonpRequest(url, { action: 'listCompletedTasks' }, data => {
-        if (data.error || !data.tasks) { container.textContent = '오류: ' + (data.error || ''); return; }
-        if (!data.tasks.length) { container.textContent = '완료된 업무가 없습니다.'; return; }
-        completedTasksAll = data.tasks;
+        if (data.error || !data.tasks) { container.textContent = '오류: ' + (data.error || ''); completedTasksLoaded = false; return; }
+        // 서버에 아직 안 간 완료/삭제도 반영해서 보여준다
+        let list = data.tasks;
+        pendingOps().forEach(op => {
+          if (op.action === 'completeTask' && op.meta && op.meta.task && !list.some(t => t.id === op.meta.task.id)) list = [op.meta.task].concat(list);
+          if (op.action === 'deleteCompletedTask') list = list.filter(t => t.id !== op.params.id);
+        });
+        if (!list.length) { container.textContent = '완료된 업무가 없습니다.'; return; }
+        completedTasksAll = list;
         completedTasksPage = 1;
         renderCompletedTasksPage();
       });
@@ -1854,7 +2207,7 @@
       const cachedBoot = cacheLoad('bootstrap');
       if (cachedBoot && cachedBoot.dashboard) targets.push(cachedBoot.dashboard);
       targets.forEach(d => (d.banks || []).forEach(b => (b.branches || []).forEach(br => {
-        const hit = br.k ? br.k === key : (b.은행명 === bankName && br.지점명 === branchName);
+        const hit = (key && br.k) ? br.k === key : (b.은행명 === bankName && br.지점명 === branchName);
         if (hit) fn(br, b);
       })));
       if (cachedBoot) cacheSave('bootstrap', cachedBoot);
@@ -2104,6 +2457,7 @@
       else mapState.bank = '';
 
       applyMapFilter();
+      rebasePendingVisits();
     }
 
     // 지금 필터 조건에서 이 마커를 보여줘야 하는지
@@ -2264,23 +2618,17 @@
       cancel.onclick = restore;
 
       save.onclick = () => {
-        save.disabled = true; save.textContent = '저장 중...';
         const payload = { bank, branch, seller: seller.판매자명, date: todayLocalISO() };
         FIELD_LABELS.forEach(([key]) => { payload[key] = buildTaggedValue(areas[key]); });
-        jsonpRequest(getUrl(), { action: 'saveSellerFields', data: JSON.stringify(payload) }, d => {
-          if (!d || d.error || d.ok === false) {
-            save.disabled = false; save.textContent = '저장';
-            alert('오류: ' + ((d && (d.error || d.message)) || '저장하지 못했습니다'));
-            return;
-          }
-          FIELD_LABELS.forEach(([key]) => { seller[key] = payload[key]; });
-          const k = mapLogTarget.point.k;
-          if (mapDetailCache[k]) {
-            mapDetailCache[k].sellers = sellers;
-            cacheSave('detail:' + k, mapDetailCache[k]);
-          }
-          renderMapDetail(sellers);
-        });
+        FIELD_LABELS.forEach(([key]) => { seller[key] = payload[key]; });
+        const k = mapLogTarget.point.k;
+        if (mapDetailCache[k]) {
+          mapDetailCache[k].sellers = sellers;
+          cacheSave('detail:' + k, mapDetailCache[k]);
+        }
+        queueSellerSave(bank, branch, seller.판매자명, payload, seller.직책 || '');
+        renderMapDetail(sellers);
+        refreshOpenSellerForm();
       };
     }
 
@@ -2346,9 +2694,17 @@
         if (!data.sellers.length && !(cached && cached.sellers)) {
           mapDetailDiag = `진단 C: 서버 0명 (목록 ${listCount}명) ${data.은행명 || bank} ${data.지점명 || branch}`;
         }
+        pendingOps('saveSellerFields').forEach(op => {
+          const key = op.meta && op.meta.key;
+          if (!key || key.slice(0, key.lastIndexOf('|')) !== point.k) return;
+          let d; try { d = JSON.parse(op.params.data); } catch (e) { return; }
+          const s = data.sellers.find(x => x.판매자명 === d.seller);
+          if (s) SELLER_FIELD_ORDER.forEach(f => { s[f] = d[f] || ''; });
+        });
         mapDetailCache[point.k] = data;
         cacheSave('detail:' + point.k, data);
-        renderMapDetail(data.sellers);
+        // 판매자 수정 중이면 입력 중인 내용을 덮지 않는다
+        if (!document.querySelector('#mapDetailBody .md-edit-area')) renderMapDetail(data.sellers);
       });
     }
 
@@ -2357,22 +2713,40 @@
       const el = document.getElementById('mapVisitList');
       if (!bank || !branch) { el.innerHTML = ''; return; }
       el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">불러오는 중...</div>';
+      const want = bank + '|' + branch;
+      if (branchVisitsCache[want]) renderBranchVisits(bank, branch, branchVisitsCache[want]);
       jsonpRequest(getUrl(), { action: 'branchVisits', bank, branch }, data => {
+        if (!mapLogTarget || mapLogTarget.bank + '|' + mapLogTarget.branch !== want) return; // 다른 지점으로 넘어감
         if (!data || data.error || !data.visits) {
+          if (branchVisitsCache[want]) return;
           el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">이력을 불러오지 못했습니다.</div>';
           return;
         }
+        branchVisitsCache[want] = data.visits;
         renderBranchVisits(bank, branch, data.visits);
       });
     }
+    const branchVisitsCache = {};
 
     function renderBranchVisits(bank, branch, visits) {
       const el = document.getElementById('mapVisitList');
-      if (!visits.length) {
+      // 아직 서버에 안 간 방문은 맨 위에 '저장 중'으로 보여준다(수정/삭제는 저장된 뒤에)
+      const pend = outbox.filter(op => op.action === 'logVisit' && op.meta && op.meta.bank === bank && op.meta.branch === branch)
+        .reverse()
+        .map(op => `<div class="mv-item pending">
+            <div class="mv-head">
+              <span class="mv-date">${escapeHtml(localDateLabel(op.meta.date))}</span>
+              <span class="mv-type">${escapeHtml(op.meta.visitType)}</span>
+              <span class="pending-tag">서버 저장 중</span>
+            </div>
+            <div class="mv-text${op.meta.note ? '' : ' empty'}">${op.meta.note ? escapeHtml(op.meta.note) : '내용 없음'}</div>
+          </div>`).join('');
+      const total = visits.length + (pend ? outbox.filter(op => op.action === 'logVisit' && op.meta && op.meta.bank === bank && op.meta.branch === branch).length : 0);
+      if (!total) {
         el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">아직 방문 기록이 없습니다.</div>';
         return;
       }
-      el.innerHTML = '<div class="mv-title">방문 이력 ' + visits.length + '건</div>' +
+      el.innerHTML = '<div class="mv-title">방문 이력 ' + total + '건</div>' + pend +
         visits.map(v => {
           const txt = (v.내용 || '').trim();
           return `<div class="mv-item" data-row="${v.row}">
@@ -2388,7 +2762,7 @@
           </div>`;
         }).join('');
 
-      el.querySelectorAll('.mv-item').forEach(item => {
+      el.querySelectorAll('.mv-item:not(.pending)').forEach(item => {
         const row = Number(item.dataset.row);
         const v = visits.find(x => x.row === row);
         item.querySelector('.mv-edit-btn').onclick = () => startEditVisit(item, bank, branch, v);
@@ -2436,33 +2810,38 @@
       };
     }
 
-    // 방문 입력 후 지도/대시보드를 화면에서 바로 맞춰준다. 서버 응답(ok)을 받은 뒤에만 반영한다 —
-    // 미리 지웠다가 저장이 실패하면 안 간 지점을 다녀온 것으로 오해하게 되고, 그게 이 지도를 만든 이유와 정반대다.
-    function applyVisitLocally(key, visitType) {
+    // 방문 입력을 지도/대시보드에 즉시 반영한다. 저장은 기기 대기열에 보관되어 반드시 서버로 가고,
+    // 서버가 거절하면 '저장 실패'로 알리고 서버 기준으로 화면을 다시 맞춘다.
+    // 이번 달 방문 현황에만 영향을 주므로 다른 달 날짜는 건너뛴다.
+    function applyVisitLocally(key, visitType, bank, branch, date) {
+      if (date && String(date).slice(0, 7) !== todayLocalISO().slice(0, 7)) return;
       const newV = (!visitType || visitType === '지점방문') ? 2 : 1;
-      const m = mapState.markers.find(x => x.key === key);
-      if (!m || newV <= m.v) return;   // 이미 같거나 더 진행된 상태면 낮추지 않는다
-      const wasUnvisited = m.v === 0;
-      m.v = newV;
-      m.marker.setImage(mapMarkerImage(newV));
-
+      const m = key ? mapState.markers.find(x => x.key === key) : null;
+      if (m && newV > m.v) {   // 이미 같거나 더 진행된 상태면 낮추지 않는다
+        m.v = newV;
+        m.marker.setImage(mapMarkerImage(newV, m.low));
+      }
       // 지도 데이터와 저장본도 같이 고쳐, 다시 열었을 때 예전 상태로 되돌아가지 않게 한다
-      if (mapState.data && mapState.data.points) {
-        const p = mapState.data.points.find(x => x.k === key);
-        if (p) p.v = newV;
-        cacheSave('mapData', mapState.data);
+      const md = mapState.data || cacheLoad('mapData');
+      if (key && md && md.points) {
+        const p = md.points.find(x => x.k === key);
+        if (p && newV > p.v) { p.v = newV; cacheSave('mapData', md); }
       }
-      applyMapFilter();
+      if (m && mapState.inited) applyMapFilter();
+      // 대시보드: 이번 달 첫 접촉이면 방문으로 옮긴다
+      patchDashboardBranch(key, bank || (m && m.bank), branch || (m && m.branch), (br, b) => {
+        if (br.visited) return;
+        br.visited = true;
+        if (b.미방문 > 0) { b.미방문--; b.당월방문++; }
+      });
+    }
 
-      // 대시보드는 별도 요청으로 받은 값이라, 갱신 전까지 지도와 숫자가 어긋나 보인다.
-      // 이번 달 첫 접촉일 때만 방문/미방문 수를 옮겨준다.
-      if (wasUnvisited) {
-        patchDashboardBranch(key, m.bank, m.branch, (br, b) => {
-          if (br.visited) return;
-          br.visited = true;
-          if (b.미방문 > 0) { b.미방문--; b.당월방문++; }
-        });
-      }
+    // 서버에서 새로 받은 지도/대시보드 위에, 아직 저장 중인 방문을 다시 덧씌운다
+    function rebasePendingVisits() {
+      pendingOps('logVisit').forEach(op => {
+        const m = op.meta || {};
+        applyVisitLocally(m.key, m.visitType, m.bank, m.branch, m.date);
+      });
     }
 
     document.getElementById('mapLogBtn').onclick = function () {
@@ -2474,26 +2853,23 @@
       const visitType = document.getElementById('mapLogType').value;
       const note = document.getElementById('mapLogNote').value.trim();
 
-      this.disabled = true;
-      showStatus(statusEl, '입력 중...');
       const key = mapLogTarget.point.k;
-      jsonpRequest(getUrl(), { action: 'logVisit', bank, branch, date, visitType, note }, data => {
-        document.getElementById('mapLogBtn').disabled = false;
-        if (!data || data.error || data.ok === false) {
-          showStatus(statusEl, '오류: ' + ((data && (data.error || data.message)) || '저장하지 못했습니다'), true);
-          return;
-        }
-        showStatus(statusEl, `✓ ${data.dateLabel} ${visitType} 입력 완료`);
-        document.getElementById('mapLogNote').value = '';
-        applyVisitLocally(key, visitType);
-        loadBranchVisits(bank, branch);
-        if (mapLogTarget && mapLogTarget.point.k === key) {
-          mapLogTarget.point.v = (!visitType || visitType === '지점방문') ? 2 : 1;
-          const lbl = mapLogTarget.point.v === 2 ? '방문완료' : '통화·제안서만';
-          const cls = mapLogTarget.point.v === 2 ? 'visited' : 'unvisited';
-          const head = document.getElementById('mapDetailHead');
-          const chip = head.querySelector('.branch-chip');
-          if (chip) { chip.textContent = lbl; chip.className = 'branch-chip ' + cls; }
+      const op = queueVisit(bank, branch, date, visitType, note);
+      showStatus(statusEl, `✓ ${localDateLabel(date)} ${visitType} 입력 완료`);
+      document.getElementById('mapLogNote').value = '';
+      renderBranchVisits(bank, branch, branchVisitsCache[bank + '|' + branch] || []);
+      const newV = (!visitType || visitType === '지점방문') ? 2 : 1;
+      if (date.slice(0, 7) === todayLocalISO().slice(0, 7) && newV > (mapLogTarget.point.v || 0)) {
+        mapLogTarget.point.v = newV;
+        const head = document.getElementById('mapDetailHead');
+        const chip = head.querySelector('.branch-chip');
+        if (chip) { chip.textContent = newV === 2 ? '방문완료' : '통화·제안서만'; chip.className = 'branch-chip ' + (newV === 2 ? 'visited' : 'unvisited'); }
+      }
+      // 서버에 저장되면 이력을 서버 기준(수정/삭제 가능)으로 다시 불러온다
+      onOpDone(op.id, (d, err) => {
+        if (err) showStatus(statusEl, '서버 저장 실패: ' + err, true);
+        if (mapLogTarget && mapLogTarget.point.k === key && document.getElementById('mapDetailOverlay').style.display !== 'none') {
+          loadBranchVisits(bank, branch);
         }
       });
     };
@@ -2605,6 +2981,9 @@
       if (!getStoredToken()) showUserPicker();
 
       showCachedUserName();
+      outboxReload();
+      sellerStore = cacheLoad('sellers');
+      sellerStoreFresh = false;
 
       // 저장된 내용이 있으면 기다리지 않고 즉시 그린다 (체감 0초).
       const cached = cacheLoad('bootstrap');
@@ -2613,11 +2992,22 @@
         applyBranchList(cached.branches);
         applyTasks(cached.tasks);
         applyDashboard(cached.dashboard);
+        rebasePendingVisits();
         setSyncing(true);
       } else {
         dashboardList.textContent = '불러오는 중...';
       }
 
+      pumpOutbox();        // 지난번에 못 보낸 저장이 있으면 이어서 보낸다
+      loadSellerDump();    // 판매자 정보 보관본을 뒤에서 최신으로 교체
+      fetchBootstrap(!!cached);
+    }
+
+    // 서버 기준으로 첫 화면 데이터를 다시 받는다(저장이 거절됐을 때도 사용)
+    function refreshFromServer() { fetchBootstrap(true); loadSellerDump(); }
+    function fetchBootstrap(hasCached) {
+      const url = getUrl();
+      const cached = hasCached;
       jsonpRequest(url, { action: 'bootstrap' }, data => {
         setSyncing(false);
         if (data && data.__net) {
@@ -2631,11 +3021,14 @@
           initUser(); loadBranchList(); loadTasks(); loadDashboard();
           return;
         }
-        cacheSave('bootstrap', data);
         applyMeResult(data.me);
         applyBranchList(data.branches);
         applyTasks(data.tasks);
         applyDashboard(data.dashboard);
+        // 보관본에는 저장 중인 변경을 덧씌운 상태로 둔다(다음에 열 때 잠깐 옛 상태가 보이지 않게)
+        cacheSave('bootstrap', Object.assign({}, data, { tasks: { ok: true, tasks: tasksState } }));
+        rebasePendingVisits();
+        refreshOpenSellerForm();
       });
     }
 
@@ -2665,6 +3058,13 @@
     window.addEventListener('online', updateOnlineState);
     window.addEventListener('offline', updateOnlineState);
     updateOnlineState();
+
+    window.addEventListener('online', pumpOutbox);
+    window.addEventListener('offline', renderOutboxBadge);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pumpOutbox(); });
+    setInterval(() => { if (outbox.length && !pumpBusy) pumpOutbox(); }, 30000);
+    document.getElementById('outboxBadge').onclick = openOutboxModal;
+    document.getElementById('outboxModalClose').onclick = () => { document.getElementById('outboxModal').style.display = 'none'; };
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
