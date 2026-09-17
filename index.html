@@ -596,7 +596,7 @@
             <option value="법인사랑연금">법인사랑연금</option>
             <option value="탄탄한변액연금">탄탄한변액연금</option>
           </select>
-          <input id="propAmount" type="text" placeholder="금액 (예: 30000000, 월 50만원)" />
+          <input id="propAmount" type="text" placeholder="금액 (억 단위 · 예: 1.5)" />
           <select id="propChance">
             <option value="">가능성</option>
             <option value="상">가능성 상</option>
@@ -2241,24 +2241,38 @@
       if (cached) { cached.proposals = { ok: true, items: propState }; cacheSave('bootstrap', cached); }
     }
 
-    // 금액은 숫자만 쓰면 원 단위 숫자로, 글자가 섞이면('월 50만원', '일시납 1억') 적은 그대로 저장한다
-    function isNumericAmount(v) { return /^[\d,\s]+$/.test(String(v || '')) && /\d/.test(String(v || '')); }
+    // 금액은 '억'을 단위로 적는다. 숫자만 쓰면 억으로 읽고(1.5 = 1억 5천만원),
+    // 글자가 섞이면('월 50만원', '일시납 1억 5천') 적은 그대로 저장해서 보여준다.
+    function isNumericAmount(v) { return /^[\d.,\s]+$/.test(String(v || '')) && /\d/.test(String(v || '')); }
     function normalizeAmount(v) {
       const t = String(v || '').trim();
-      return isNumericAmount(t) ? t.replace(/[^0-9]/g, '') : t;
+      if (!isNumericAmount(t)) return t;
+      const n = parseFloat(t.replace(/[^0-9.]/g, ''));
+      return isFinite(n) && n > 0 ? String(Number(n.toFixed(4))) : '';
     }
+    function amountEok(v) { return isNumericAmount(v) ? parseFloat(String(v).replace(/[^0-9.]/g, '')) || 0 : 0; }
+    // 목록에 보이는 금액: 숫자면 '1.5억', 글자면 적은 그대로
     function formatWon(v) {
       if (!isNumericAmount(v)) return String(v || '').trim();
-      const n = Number(String(v).replace(/[^0-9]/g, ''));
-      return n ? n.toLocaleString('ko-KR') + '원' : '';
+      const n = amountEok(v);
+      return n ? Number(n.toFixed(4)) + '억' : '';
     }
-    // 1,000만원 / 1억 2,000만원 처럼 읽기 쉬운 표기 (숫자로 적은 금액만)
-    function readableWon(digits) {
-      if (!isNumericAmount(digits)) return '';
-      const n = Number(String(digits || '').replace(/[^0-9]/g, ''));
-      if (!n || n < 10000) return '';
-      const eok = Math.floor(n / 100000000), man = Math.floor((n % 100000000) / 10000);
+    // 원 단위로 풀어 쓴 금액 (1.5 → '1억 5,000만원'). 딱 떨어지는 억은 굳이 풀지 않는다.
+    function readableWon(v) {
+      const e = amountEok(v);
+      if (!e || Number.isInteger(e)) return '';
+      const won = Math.round(e * 100000000);
+      const eok = Math.floor(won / 100000000), man = Math.floor((won % 100000000) / 10000);
       return [eok ? eok.toLocaleString('ko-KR') + '억' : '', man ? man.toLocaleString('ko-KR') + '만' : ''].filter(Boolean).join(' ') + '원';
+    }
+    // 입력칸 아래 안내: 적은 금액이 얼마인지 원으로 풀어 보여준다
+    function amountHintText(v) {
+      const e = amountEok(v);
+      if (!e) return '';
+      const won = Math.round(e * 100000000);
+      const eok = Math.floor(won / 100000000), man = Math.floor((won % 100000000) / 10000);
+      const txt = [eok ? eok.toLocaleString('ko-KR') + '억' : '', man ? man.toLocaleString('ko-KR') + '만' : ''].filter(Boolean).join(' ') + '원';
+      return e >= 1000 ? txt + ' — 억 단위가 맞는지 확인해주세요' : txt;
     }
     function daysUntil(iso) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return null;
@@ -2292,12 +2306,11 @@
 
       document.getElementById('propBadge').textContent = propState.length ? propState.length + '건' : '';
       // 합계는 숫자로 적은 금액만 더한다(글자로 적은 금액은 단위가 제각각이라 더하면 틀린다)
-      const numeric = propState.filter(x => isNumericAmount(x.금액));
-      const total = numeric.reduce((a, x) => a + (Number(String(x.금액).replace(/[^0-9]/g, '')) || 0), 0);
+      const total = propState.reduce((a, x) => a + amountEok(x.금액), 0);
       const textCount = propState.filter(x => x.금액 && !isNumericAmount(x.금액)).length;
       const cnt = k => propState.filter(x => x.가능성 === k).length;
       document.getElementById('propStats').innerHTML = propState.length
-        ? `<span>진행 <b>${propState.length}</b>건</span><span>합계 <b>${escapeHtml(readableWon(String(total)) || formatWon(String(total)) || '0원')}</b>${textCount ? ` (글자 금액 ${textCount}건 제외)` : ''}</span>` +
+        ? `<span>진행 <b>${propState.length}</b>건</span><span>합계 <b>${escapeHtml(total ? Number(total.toFixed(4)) + '억' : '0억')}</b>${textCount ? ` (글자 금액 ${textCount}건 제외)` : ''}</span>` +
           `<span>상 <b>${cnt('상')}</b> · 중 <b>${cnt('중')}</b> · 하 <b>${cnt('하')}</b></span>`
         : '';
 
@@ -2362,14 +2375,8 @@
 
     document.getElementById('propAmount').addEventListener('input', function () {
       const hint = document.getElementById('propAmountHint');
-      // 숫자만 적는 중이면 쉼표를 넣어 주고, 글자가 섞이면 적은 그대로 둔다
-      if (isNumericAmount(this.value)) {
-        const digits = this.value.replace(/[^0-9]/g, '');
-        this.value = Number(digits).toLocaleString('ko-KR');
-        hint.textContent = readableWon(digits);
-      } else {
-        hint.textContent = '';
-      }
+      // 억 단위 숫자면 원으로 풀어 보여주고, 글자가 섞이면 적은 그대로 둔다
+      hint.textContent = isNumericAmount(this.value) ? amountHintText(this.value) : '';
     });
 
     document.getElementById('propSaveBtn').onclick = () => {
@@ -2415,9 +2422,8 @@
         prodSel.appendChild(o);
       }
       prodSel.value = x.상품 || '';
-      document.getElementById('propAmount').value = isNumericAmount(x.금액)
-        ? Number(String(x.금액).replace(/[^0-9]/g, '')).toLocaleString('ko-KR') : (x.금액 || '');
-      document.getElementById('propAmountHint').textContent = readableWon(x.금액);
+      document.getElementById('propAmount').value = x.금액 || '';
+      document.getElementById('propAmountHint').textContent = isNumericAmount(x.금액) ? amountHintText(x.금액) : '';
       document.getElementById('propChance').value = x.가능성 || '';
       document.getElementById('propDate').value = x.추진일 || '';
       document.getElementById('propNote').value = x.비고 || '';
