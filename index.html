@@ -588,8 +588,15 @@
         <select class="sel-full" id="propSellerSelect"><option value="">판매자 선택(선택 안 해도 됨)</option></select>
         <div class="prop-grid">
           <input id="propCustomer" type="text" placeholder="고객" />
-          <input id="propProduct" type="text" placeholder="상품" />
-          <input id="propAmount" type="text" inputmode="numeric" placeholder="금액(원)" />
+          <select id="propProduct">
+            <option value="">상품 선택</option>
+            <option value="플래티넘행복연금">플래티넘행복연금</option>
+            <option value="즉시연금">즉시연금</option>
+            <option value="행복플러스연금">행복플러스연금</option>
+            <option value="법인사랑연금">법인사랑연금</option>
+            <option value="탄탄한변액연금">탄탄한변액연금</option>
+          </select>
+          <input id="propAmount" type="text" placeholder="금액 (예: 30000000, 월 50만원)" />
           <select id="propChance">
             <option value="">가능성</option>
             <option value="상">가능성 상</option>
@@ -2201,7 +2208,7 @@
     function propFromPayload(d) {
       return {
         id: d.id, 입력일: '', 은행: d.bank || '', 지점: d.branch || '', 판매자명: d.seller || '', 직책: d.title || '',
-        고객: d.customer || '', 상품: d.product || '', 금액: String(d.amount || '').replace(/[^0-9]/g, ''),
+        고객: d.customer || '', 상품: d.product || '', 금액: normalizeAmount(d.amount),
         가능성: d.chance || '', 추진일: d.date || '', 비고: d.note || '', 수정일시: ''
       };
     }
@@ -2234,12 +2241,20 @@
       if (cached) { cached.proposals = { ok: true, items: propState }; cacheSave('bootstrap', cached); }
     }
 
-    function formatWon(digits) {
-      const n = Number(String(digits || '').replace(/[^0-9]/g, ''));
+    // 금액은 숫자만 쓰면 원 단위 숫자로, 글자가 섞이면('월 50만원', '일시납 1억') 적은 그대로 저장한다
+    function isNumericAmount(v) { return /^[\d,\s]+$/.test(String(v || '')) && /\d/.test(String(v || '')); }
+    function normalizeAmount(v) {
+      const t = String(v || '').trim();
+      return isNumericAmount(t) ? t.replace(/[^0-9]/g, '') : t;
+    }
+    function formatWon(v) {
+      if (!isNumericAmount(v)) return String(v || '').trim();
+      const n = Number(String(v).replace(/[^0-9]/g, ''));
       return n ? n.toLocaleString('ko-KR') + '원' : '';
     }
-    // 1,000만원 / 1억 2,000만원 처럼 읽기 쉬운 표기
+    // 1,000만원 / 1억 2,000만원 처럼 읽기 쉬운 표기 (숫자로 적은 금액만)
     function readableWon(digits) {
+      if (!isNumericAmount(digits)) return '';
       const n = Number(String(digits || '').replace(/[^0-9]/g, ''));
       if (!n || n < 10000) return '';
       const eok = Math.floor(n / 100000000), man = Math.floor((n % 100000000) / 10000);
@@ -2276,10 +2291,13 @@
       });
 
       document.getElementById('propBadge').textContent = propState.length ? propState.length + '건' : '';
-      const total = propState.reduce((a, x) => a + (Number(x.금액) || 0), 0);
+      // 합계는 숫자로 적은 금액만 더한다(글자로 적은 금액은 단위가 제각각이라 더하면 틀린다)
+      const numeric = propState.filter(x => isNumericAmount(x.금액));
+      const total = numeric.reduce((a, x) => a + (Number(String(x.금액).replace(/[^0-9]/g, '')) || 0), 0);
+      const textCount = propState.filter(x => x.금액 && !isNumericAmount(x.금액)).length;
       const cnt = k => propState.filter(x => x.가능성 === k).length;
       document.getElementById('propStats').innerHTML = propState.length
-        ? `<span>진행 <b>${propState.length}</b>건</span><span>합계 <b>${escapeHtml(readableWon(total) || formatWon(total) || '0원')}</b></span>` +
+        ? `<span>진행 <b>${propState.length}</b>건</span><span>합계 <b>${escapeHtml(readableWon(String(total)) || formatWon(String(total)) || '0원')}</b>${textCount ? ` (글자 금액 ${textCount}건 제외)` : ''}</span>` +
           `<span>상 <b>${cnt('상')}</b> · 중 <b>${cnt('중')}</b> · 하 <b>${cnt('하')}</b></span>`
         : '';
 
@@ -2324,7 +2342,7 @@
         title: sel.value && opt ? opt.textContent.replace(sel.value, '').trim() : '',
         customer: document.getElementById('propCustomer').value.trim(),
         product: document.getElementById('propProduct').value.trim(),
-        amount: document.getElementById('propAmount').value.replace(/[^0-9]/g, ''),
+        amount: normalizeAmount(document.getElementById('propAmount').value),
         chance: document.getElementById('propChance').value,
         date: document.getElementById('propDate').value,
         note: document.getElementById('propNote').value.trim()
@@ -2333,6 +2351,7 @@
     function resetProposalForm() {
       propEditId = null;
       ['propCustomer', 'propProduct', 'propAmount', 'propDate', 'propNote'].forEach(id => { document.getElementById(id).value = ''; });
+      document.querySelectorAll('#propProduct option[data-legacy]').forEach(o => o.remove());
       document.getElementById('propChance').value = '';
       document.getElementById('propAmountHint').textContent = '';
       document.getElementById('propFormTitle').textContent = '새 제안서 입력';
@@ -2342,9 +2361,15 @@
     }
 
     document.getElementById('propAmount').addEventListener('input', function () {
-      const digits = this.value.replace(/[^0-9]/g, '');
-      this.value = digits ? Number(digits).toLocaleString('ko-KR') : '';
-      document.getElementById('propAmountHint').textContent = readableWon(digits);
+      const hint = document.getElementById('propAmountHint');
+      // 숫자만 적는 중이면 쉼표를 넣어 주고, 글자가 섞이면 적은 그대로 둔다
+      if (isNumericAmount(this.value)) {
+        const digits = this.value.replace(/[^0-9]/g, '');
+        this.value = Number(digits).toLocaleString('ko-KR');
+        hint.textContent = readableWon(digits);
+      } else {
+        hint.textContent = '';
+      }
     });
 
     document.getElementById('propSaveBtn').onclick = () => {
@@ -2381,8 +2406,17 @@
         sel.value = x.판매자명 || '';
       });
       document.getElementById('propCustomer').value = x.고객 || '';
-      document.getElementById('propProduct').value = x.상품 || '';
-      document.getElementById('propAmount').value = x.금액 ? Number(x.금액).toLocaleString('ko-KR') : '';
+      const prodSel = document.getElementById('propProduct');
+      prodSel.querySelectorAll('option[data-legacy]').forEach(o => o.remove());
+      if (x.상품 && ![...prodSel.options].some(o => o.value === x.상품)) {
+        // 목록에 없는 예전 상품명도 잃지 않게 임시로 넣어 둔다
+        const o = document.createElement('option');
+        o.value = x.상품; o.textContent = x.상품; o.dataset.legacy = '1';
+        prodSel.appendChild(o);
+      }
+      prodSel.value = x.상품 || '';
+      document.getElementById('propAmount').value = isNumericAmount(x.금액)
+        ? Number(String(x.금액).replace(/[^0-9]/g, '')).toLocaleString('ko-KR') : (x.금액 || '');
       document.getElementById('propAmountHint').textContent = readableWon(x.금액);
       document.getElementById('propChance').value = x.가능성 || '';
       document.getElementById('propDate').value = x.추진일 || '';

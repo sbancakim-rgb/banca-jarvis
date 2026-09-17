@@ -2476,7 +2476,9 @@ function propRowToObj(r) {
 }
 
 function propFieldsFromData(data) {
-  var amount = String(data.amount || '').replace(/[^0-9]/g, '');
+  // 숫자만 적었으면 숫자로, 글자가 섞였으면('월 50만원') 적은 그대로 저장한다
+  var amount = String(data.amount || '').trim().substring(0, 100);
+  if (/^[\d,\s]+$/.test(amount)) amount = amount.replace(/[^0-9]/g, '');
   var chance = String(data.chance || '').trim();
   if (['상', '중', '하'].indexOf(chance) === -1) chance = '';
   var date = String(data.date || '').trim();
