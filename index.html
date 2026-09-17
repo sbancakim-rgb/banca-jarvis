@@ -326,6 +326,46 @@
   .task-done-item:last-child { border-bottom: none; }
   .task-done-item .task-item-date { color: var(--muted); }
 
+  /* 접었다 펼치는 카드 */
+  details.fold-card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 18px; font-weight: 700; color: var(--text); }
+  details.fold-card > summary::-webkit-details-marker { display: none; }
+  details.fold-card > summary::after { content: '▾'; display: inline-block; font-size: 13px; color: var(--muted); transition: transform 0.15s; }
+  details.fold-card:not([open]) > summary::after { transform: rotate(-90deg); }
+  .fold-badge { font-size: 11.5px; font-weight: 600; color: var(--muted); background: #eef2f7; border-radius: 999px; padding: 2px 8px; }
+  .fold-badge:empty { display: none; }
+  .fold-body { margin-top: 14px; }
+  /* 제안서 관리 */
+  .prop-form-title { font-size: 12.5px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
+  .prop-form-title.editing { color: #b45309; }
+  .prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .prop-grid input, .prop-grid select, #propNote {
+    width: 100%; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border);
+    font-size: 13.5px; background: #fff; color: var(--text); font-family: inherit; }
+  .prop-grid .prop-date { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .prop-grid .prop-date input { flex: 1; }
+  .prop-amount-hint { grid-column: 1 / -1; font-size: 11px; color: var(--muted); margin-top: -2px; min-height: 0; }
+  .prop-amount-hint:empty { display: none; }
+  #propNote { margin-top: 6px; resize: vertical; }
+  .prop-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); margin: 14px 0 4px; }
+  .prop-stats b { color: var(--text); }
+  .prop-sort { display: flex; gap: 6px; margin-top: 8px; }
+  .prop-sort button { padding: 6px 10px; font-size: 12px; }
+  .prop-item { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 13.5px; line-height: 1.5; }
+  .prop-item.overdue { border-color: #fca5a5; }
+  .prop-item-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .prop-cust { font-weight: 700; }
+  .prop-chance { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
+  .prop-chance.c-상 { background: #dcfce7; color: #15803d; }
+  .prop-chance.c-중 { background: #fef3c7; color: #b45309; }
+  .prop-chance.c-하 { background: #e2e8f0; color: #475569; }
+  .prop-dday { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--primary); }
+  .prop-dday.past { color: var(--danger); }
+  .prop-sub { font-size: 12.5px; color: var(--muted); }
+  .prop-amount { font-weight: 700; color: var(--text); }
+  .prop-note { margin-top: 4px; white-space: pre-wrap; }
+  .prop-del-item { font-size: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); color: var(--text); }
+  .prop-del-item:last-child { border-bottom: none; }
   details.settings { margin-top: 24px; }
   details.settings summary { text-align: center; font-size: 11px; color: #94a3b8; cursor: pointer; padding: 8px; }
   details.settings input { width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; background: #f8fafc; }
@@ -535,6 +575,49 @@
         <div id="completedTaskList" style="margin-top:10px;"></div>
       </details>
     </div>
+
+    <!-- ④-2 제안서 관리 (접어 두었다가 펼쳐서 사용) -->
+    <details class="card fold-card" id="proposalCard">
+      <summary>제안서 관리 <span id="propBadge" class="fold-badge"></span></summary>
+      <div class="fold-body">
+        <div id="propFormTitle" class="prop-form-title">새 제안서 입력</div>
+        <div class="select-row">
+          <select id="propBankSelect"><option value="">은행 선택</option></select>
+          <select id="propBranchSelect"><option value="">지점 선택</option></select>
+        </div>
+        <select class="sel-full" id="propSellerSelect"><option value="">판매자 선택(선택 안 해도 됨)</option></select>
+        <div class="prop-grid">
+          <input id="propCustomer" type="text" placeholder="고객" />
+          <input id="propProduct" type="text" placeholder="상품" />
+          <input id="propAmount" type="text" inputmode="numeric" placeholder="금액(원)" />
+          <select id="propChance">
+            <option value="">가능성</option>
+            <option value="상">가능성 상</option>
+            <option value="중">가능성 중</option>
+            <option value="하">가능성 하</option>
+          </select>
+          <div id="propAmountHint" class="prop-amount-hint"></div>
+          <label class="prop-date">추진일 <input id="propDate" type="date" /></label>
+        </div>
+        <textarea id="propNote" rows="2" placeholder="비고"></textarea>
+        <button id="propSaveBtn" class="btn-primary" style="margin-top:10px;">제안서 추가</button>
+        <button id="propCancelEditBtn" class="btn-neutral" style="margin-top:6px;display:none;">수정 취소</button>
+        <div id="propStatus" class="status-box"></div>
+
+        <div id="propStats" class="prop-stats"></div>
+        <div class="prop-sort">
+          <button type="button" class="task-toggle-btn active" data-sort="date">추진일순</button>
+          <button type="button" class="task-toggle-btn" data-sort="chance">가능성순</button>
+          <button type="button" class="task-toggle-btn" data-sort="recent">최근 입력순</button>
+        </div>
+        <div id="propList"></div>
+
+        <details class="task-done-details" id="propDeletedDetails">
+          <summary>삭제된 제안서 보기</summary>
+          <div id="propDeletedList" style="margin-top:6px;"></div>
+        </details>
+      </div>
+    </details>
 
     <!-- 알람 설정 팝업 -->
     <div id="alarmModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:100;align-items:center;justify-content:center;">
@@ -924,6 +1007,7 @@
     function afterOpSettled(op) {
       try {
         if (/Task/.test(op.action) || op.action === 'reorderTasks') renderTasks(tasksState);
+        if (/ProposalItem$/.test(op.action)) renderProposals();
         if (op.action === 'logVisit' && calSelected && op.meta && op.meta.date === calSelected.dateStr &&
             calSelected.cell.classList.contains('selected')) selectCalendarDate(calSelected.dateStr, calSelected.cell);
       } catch (e) {}
@@ -1240,6 +1324,14 @@
       null
     );
 
+    const propPicker = makePicker(
+      document.getElementById('propBankSelect'),
+      document.getElementById('propBranchSelect'),
+      document.getElementById('propSellerSelect'),
+      '판매자 선택(선택 안 해도 됨)',
+      null
+    );
+
     const taskEditPicker = makePicker(
       document.getElementById('taskEditBankSelect'),
       document.getElementById('taskEditBranchSelect'),
@@ -1301,6 +1393,7 @@
       sellerPicker.populate();
       taskPicker.populate();
       taskEditPicker.populate();
+      propPicker.populate();
     }
 
     function loadBranchList() {
@@ -2095,6 +2188,264 @@
         { summary: memo }));
       closeTaskEditModal();
     };
+
+    // ─── 제안서 관리 ─────────────────────────────────────────────────────────
+    // 업무 LIST와 같은 방식: 저장은 대기열로 뒤에서 보내고 화면은 즉시 바꾼다.
+    let propState = [];
+    let propEditId = null;
+    let propSort = 'date';
+    let propDeletedLoaded = false;
+    let propDeletedAll = [];
+    const CHANCE_RANK = { '상': 0, '중': 1, '하': 2 };
+
+    function propFromPayload(d) {
+      return {
+        id: d.id, 입력일: '', 은행: d.bank || '', 지점: d.branch || '', 판매자명: d.seller || '', 직책: d.title || '',
+        고객: d.customer || '', 상품: d.product || '', 금액: String(d.amount || '').replace(/[^0-9]/g, ''),
+        가능성: d.chance || '', 추진일: d.date || '', 비고: d.note || '', 수정일시: ''
+      };
+    }
+    const PROP_EDIT_FIELDS = ['은행', '지점', '판매자명', '직책', '고객', '상품', '금액', '가능성', '추진일', '비고'];
+    function applyPropOp(list, op) {
+      const p = op.params || {};
+      let d = null;
+      try { if (p.data) d = JSON.parse(p.data); } catch (e) { return list; }
+      if (op.action === 'addProposalItem') {
+        if (d && !list.some(x => x.id === d.id)) list.push(Object.assign(propFromPayload(d), { 입력일: (op.meta && op.meta.입력일) || '' }));
+      } else if (op.action === 'editProposalItem') {
+        const x = list.find(t => t.id === p.id);
+        if (x && d) { const n = propFromPayload(d); PROP_EDIT_FIELDS.forEach(k => { x[k] = n[k]; }); }
+      } else if (op.action === 'deleteProposalItem') {
+        return list.filter(x => x.id !== p.id);
+      }
+      return list;
+    }
+    function applyProposals(data) {
+      if (!data || data.error || !data.items) return;
+      let list = data.items.map(x => Object.assign({}, x));
+      pendingOps().forEach(op => { list = applyPropOp(list, op); });
+      propState = list;
+      renderProposals();
+    }
+    function commitPropOp(op) {
+      propState = applyPropOp(propState.map(x => Object.assign({}, x)), op);
+      renderProposals();
+      const cached = cacheLoad('bootstrap');
+      if (cached) { cached.proposals = { ok: true, items: propState }; cacheSave('bootstrap', cached); }
+    }
+
+    function formatWon(digits) {
+      const n = Number(String(digits || '').replace(/[^0-9]/g, ''));
+      return n ? n.toLocaleString('ko-KR') + '원' : '';
+    }
+    // 1,000만원 / 1억 2,000만원 처럼 읽기 쉬운 표기
+    function readableWon(digits) {
+      const n = Number(String(digits || '').replace(/[^0-9]/g, ''));
+      if (!n || n < 10000) return '';
+      const eok = Math.floor(n / 100000000), man = Math.floor((n % 100000000) / 10000);
+      return [eok ? eok.toLocaleString('ko-KR') + '억' : '', man ? man.toLocaleString('ko-KR') + '만' : ''].filter(Boolean).join(' ') + '원';
+    }
+    function daysUntil(iso) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return null;
+      const [y, m, d] = iso.split('-').map(Number);
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      return Math.round((new Date(y, m - 1, d) - t) / 86400000);
+    }
+    function ddayLabel(n) { return n === null ? '' : n === 0 ? 'D-day' : n > 0 ? 'D-' + n : 'D+' + (-n); }
+
+    function sortedProposals() {
+      const list = propState.slice();
+      if (propSort === 'chance') {
+        list.sort((a, b) => ((CHANCE_RANK[a.가능성] ?? 9) - (CHANCE_RANK[b.가능성] ?? 9)) || (a.추진일 || '9').localeCompare(b.추진일 || '9'));
+      } else if (propSort === 'recent') {
+        list.reverse();
+      } else {
+        // 추진일이 가까운 것부터, 추진일 없는 것은 뒤로
+        list.sort((a, b) => (a.추진일 || '9999').localeCompare(b.추진일 || '9999'));
+      }
+      return list;
+    }
+
+    function renderProposals() {
+      const listEl = document.getElementById('propList');
+      const pendingIds = new Set();
+      outbox.forEach(op => {
+        if (!/ProposalItem$/.test(op.action)) return;
+        if (op.params.id) pendingIds.add(op.params.id);
+        try { if (op.params.data) pendingIds.add(JSON.parse(op.params.data).id); } catch (e) {}
+      });
+
+      document.getElementById('propBadge').textContent = propState.length ? propState.length + '건' : '';
+      const total = propState.reduce((a, x) => a + (Number(x.금액) || 0), 0);
+      const cnt = k => propState.filter(x => x.가능성 === k).length;
+      document.getElementById('propStats').innerHTML = propState.length
+        ? `<span>진행 <b>${propState.length}</b>건</span><span>합계 <b>${escapeHtml(readableWon(total) || formatWon(total) || '0원')}</b></span>` +
+          `<span>상 <b>${cnt('상')}</b> · 중 <b>${cnt('중')}</b> · 하 <b>${cnt('하')}</b></span>`
+        : '';
+
+      listEl.innerHTML = '';
+      if (!propState.length) {
+        listEl.innerHTML = '<div style="font-size:12.5px;color:var(--muted);text-align:center;padding:10px;">등록된 제안서가 없습니다.</div>';
+        return;
+      }
+      sortedProposals().forEach(x => {
+        const dd = daysUntil(x.추진일);
+        const div = document.createElement('div');
+        div.className = 'prop-item' + (dd !== null && dd < 0 ? ' overdue' : '');
+        const who = [x.은행 + ' ' + x.지점, x.판매자명 ? x.판매자명 + (x.직책 ? ' ' + x.직책 : '') : ''].filter(Boolean).join(' · ');
+        const amount = formatWon(x.금액);
+        div.innerHTML = `
+          <div class="prop-item-head">
+            <span class="prop-cust">${escapeHtml(x.고객 || '고객 미입력')}</span>
+            ${x.가능성 ? `<span class="prop-chance c-${escapeHtml(x.가능성)}">${escapeHtml(x.가능성)}</span>` : ''}
+            ${pendingIds.has(x.id) ? '<span class="pending-tag">서버 저장 중</span>' : ''}
+            <span class="prop-dday${dd !== null && dd < 0 ? ' past' : ''}">${escapeHtml(x.추진일 ? x.추진일 + ' ' + ddayLabel(dd) : '')}</span>
+          </div>
+          <div>${escapeHtml(x.상품 || '상품 미입력')}${amount ? ` · <span class="prop-amount">${escapeHtml(amount)}</span>` : ''}${readableWon(x.금액) ? ` <span class="prop-sub">(${escapeHtml(readableWon(x.금액))})</span>` : ''}</div>
+          <div class="prop-sub">${escapeHtml(who)}${x.입력일 ? ' · 입력 ' + escapeHtml(x.입력일) : ''}</div>
+          ${x.비고 ? `<div class="prop-note">${escapeHtml(x.비고)}</div>` : ''}
+          <div class="task-item-bottom">
+            <button class="btn-neutral prop-edit-btn" style="width:auto;padding:7px 14px;font-size:12.5px;">수정</button>
+            <button class="prop-del-btn" style="width:auto;padding:7px 14px;font-size:12.5px;background:var(--danger);">삭제</button>
+          </div>`;
+        div.querySelector('.prop-edit-btn').onclick = () => startEditProposal(x);
+        div.querySelector('.prop-del-btn').onclick = () => deleteProposal(x);
+        listEl.appendChild(div);
+      });
+    }
+
+    function propFormPayload() {
+      const bank = document.getElementById('propBankSelect').value;
+      const branch = document.getElementById('propBranchSelect').value;
+      const sel = document.getElementById('propSellerSelect');
+      const opt = sel.selectedOptions[0];
+      return {
+        bank, branch, seller: sel.value,
+        title: sel.value && opt ? opt.textContent.replace(sel.value, '').trim() : '',
+        customer: document.getElementById('propCustomer').value.trim(),
+        product: document.getElementById('propProduct').value.trim(),
+        amount: document.getElementById('propAmount').value.replace(/[^0-9]/g, ''),
+        chance: document.getElementById('propChance').value,
+        date: document.getElementById('propDate').value,
+        note: document.getElementById('propNote').value.trim()
+      };
+    }
+    function resetProposalForm() {
+      propEditId = null;
+      ['propCustomer', 'propProduct', 'propAmount', 'propDate', 'propNote'].forEach(id => { document.getElementById(id).value = ''; });
+      document.getElementById('propChance').value = '';
+      document.getElementById('propAmountHint').textContent = '';
+      document.getElementById('propFormTitle').textContent = '새 제안서 입력';
+      document.getElementById('propFormTitle').classList.remove('editing');
+      document.getElementById('propSaveBtn').textContent = '제안서 추가';
+      document.getElementById('propCancelEditBtn').style.display = 'none';
+    }
+
+    document.getElementById('propAmount').addEventListener('input', function () {
+      const digits = this.value.replace(/[^0-9]/g, '');
+      this.value = digits ? Number(digits).toLocaleString('ko-KR') : '';
+      document.getElementById('propAmountHint').textContent = readableWon(digits);
+    });
+
+    document.getElementById('propSaveBtn').onclick = () => {
+      const statusEl = document.getElementById('propStatus');
+      const d = propFormPayload();
+      if (!d.bank || !d.branch) { showStatus(statusEl, '은행과 지점을 선택해주세요.', true); return; }
+      if (!d.customer && !d.product) { showStatus(statusEl, '고객이나 상품 중 하나는 입력해주세요.', true); return; }
+      const label = d.bank + ' ' + d.branch + (d.customer ? ' · ' + d.customer : '');
+      const summary = [d.product, formatWon(d.amount), d.chance && '가능성 ' + d.chance, d.date && '추진일 ' + d.date, d.note].filter(Boolean).join(' / ');
+      if (propEditId) {
+        commitPropOp(enqueueWrite('editProposalItem', { id: propEditId, data: JSON.stringify(d) }, '제안서 수정 · ' + label, { summary }));
+        showStatus(statusEl, '✓ 수정 완료');
+      } else {
+        d.id = newId();
+        commitPropOp(enqueueWrite('addProposalItem', { data: JSON.stringify(d) }, '제안서 추가 · ' + label,
+          { 입력일: localDateLabel(todayLocalISO()), summary }));
+        showStatus(statusEl, '✓ 추가 완료');
+      }
+      resetProposalForm();
+    };
+    document.getElementById('propCancelEditBtn').onclick = () => { resetProposalForm(); hideStatus(document.getElementById('propStatus')); };
+
+    function startEditProposal(x) {
+      propEditId = x.id;
+      propPicker.setBank(x.은행);
+      propPicker.setBranch(x.지점, () => {
+        const sel = document.getElementById('propSellerSelect');
+        if (x.판매자명 && ![...sel.options].some(o => o.value === x.판매자명)) {
+          // 판매자 목록에서 빠진 사람(삭제 등)이어도 기존 값을 잃지 않게 임시로 넣어 둔다
+          const o = document.createElement('option');
+          o.value = x.판매자명; o.textContent = x.판매자명 + (x.직책 ? ' ' + x.직책 : '');
+          sel.appendChild(o);
+        }
+        sel.value = x.판매자명 || '';
+      });
+      document.getElementById('propCustomer').value = x.고객 || '';
+      document.getElementById('propProduct').value = x.상품 || '';
+      document.getElementById('propAmount').value = x.금액 ? Number(x.금액).toLocaleString('ko-KR') : '';
+      document.getElementById('propAmountHint').textContent = readableWon(x.금액);
+      document.getElementById('propChance').value = x.가능성 || '';
+      document.getElementById('propDate').value = x.추진일 || '';
+      document.getElementById('propNote').value = x.비고 || '';
+      const title = document.getElementById('propFormTitle');
+      title.textContent = '✏️ 수정 중: ' + (x.고객 || x.상품 || x.은행 + ' ' + x.지점);
+      title.classList.add('editing');
+      document.getElementById('propSaveBtn').textContent = '수정 저장';
+      document.getElementById('propCancelEditBtn').style.display = '';
+      hideStatus(document.getElementById('propStatus'));
+      title.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function deleteProposal(x) {
+      if (!confirm(`${x.고객 || x.상품 || '이 제안서'} (${x.은행} ${x.지점}) 제안서를 삭제할까요?\n삭제한 내용은 '삭제된 제안서 보기'에서 확인할 수 있습니다.`)) return;
+      const now = new Date();
+      const delAt = todayLocalISO() + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+      const snapshot = Object.assign({}, x, { 삭제일시: delAt });
+      commitPropOp(enqueueWrite('deleteProposalItem', { id: x.id }, '제안서 삭제 · ' + x.은행 + ' ' + x.지점 + (x.고객 ? ' · ' + x.고객 : ''),
+        { item: snapshot, summary: [x.상품, formatWon(x.금액)].filter(Boolean).join(' / ') }));
+      if (propEditId === x.id) resetProposalForm();
+      if (propDeletedLoaded) { propDeletedAll.unshift(snapshot); renderDeletedProposals(); }
+    }
+
+    function renderDeletedProposals() {
+      const el = document.getElementById('propDeletedList');
+      if (!propDeletedAll.length) { el.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">삭제된 제안서가 없습니다.</div>'; return; }
+      el.innerHTML = propDeletedAll.map(x => `<div class="prop-del-item">
+          <div><b>${escapeHtml(x.고객 || '고객 미입력')}</b> · ${escapeHtml(x.상품 || '상품 미입력')}${x.금액 ? ' · ' + escapeHtml(formatWon(x.금액)) : ''}${x.가능성 ? ' · 가능성 ' + escapeHtml(x.가능성) : ''}</div>
+          <div class="prop-sub">${escapeHtml(x.은행 + ' ' + x.지점)}${x.판매자명 ? ' · ' + escapeHtml(x.판매자명) : ''}${x.추진일 ? ' · 추진일 ' + escapeHtml(x.추진일) : ''} · 삭제 ${escapeHtml(x.삭제일시 || '')}</div>
+        </div>`).join('');
+    }
+
+    document.getElementById('propDeletedDetails').addEventListener('toggle', function () {
+      if (!this.open || propDeletedLoaded) return;
+      propDeletedLoaded = true;
+      const el = document.getElementById('propDeletedList');
+      el.textContent = '불러오는 중...';
+      jsonpRequest(getUrl(), { action: 'listDeletedProposalItems' }, data => {
+        if (!data || data.error || !data.items) { el.textContent = '불러오지 못했습니다. 다시 펼쳐 주세요.'; propDeletedLoaded = false; return; }
+        let list = data.items;
+        // 아직 서버에 안 간 삭제도 함께 보여준다
+        pendingOps('deleteProposalItem').forEach(op => {
+          if (op.meta && op.meta.item && !list.some(x => x.id === op.meta.item.id)) list = [op.meta.item].concat(list);
+        });
+        propDeletedAll = list;
+        renderDeletedProposals();
+      });
+    });
+
+    document.querySelectorAll('.prop-sort button').forEach(b => {
+      b.onclick = () => {
+        propSort = b.dataset.sort;
+        document.querySelectorAll('.prop-sort button').forEach(x => x.classList.toggle('active', x === b));
+        try { localStorage.setItem('bancaPropSort', propSort); } catch (e) {}
+        renderProposals();
+      };
+    });
+    try {
+      const saved = localStorage.getItem('bancaPropSort');
+      const btn = saved && document.querySelector('.prop-sort button[data-sort="' + saved + '"]');
+      if (btn) { propSort = saved; document.querySelectorAll('.prop-sort button').forEach(x => x.classList.toggle('active', x === btn)); }
+    } catch (e) {}
 
     // ─── 완료된 업무 목록 (펼칠 때 1회 로드, 페이지네이션) ─────────────────────
     const TASK_DONE_PAGE_SIZE = 8;
@@ -2991,6 +3342,7 @@
         applyMeResult(cached.me);
         applyBranchList(cached.branches);
         applyTasks(cached.tasks);
+        applyProposals(cached.proposals);
         applyDashboard(cached.dashboard);
         rebasePendingVisits();
         setSyncing(true);
@@ -3024,9 +3376,12 @@
         applyMeResult(data.me);
         applyBranchList(data.branches);
         applyTasks(data.tasks);
+        applyProposals(data.proposals);
         applyDashboard(data.dashboard);
         // 보관본에는 저장 중인 변경을 덧씌운 상태로 둔다(다음에 열 때 잠깐 옛 상태가 보이지 않게)
-        cacheSave('bootstrap', Object.assign({}, data, { tasks: { ok: true, tasks: tasksState } }));
+        const snap = Object.assign({}, data, { tasks: { ok: true, tasks: tasksState } });
+        if (data.proposals && !data.proposals.error) snap.proposals = { ok: true, items: propState };
+        cacheSave('bootstrap', snap);
         rebasePendingVisits();
         refreshOpenSellerForm();
       });

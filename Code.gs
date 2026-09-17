@@ -7,6 +7,8 @@ var SHEET_USERS = '사용자목록';
 var SHEET_DELETED = '삭제된 판매자';
 var SHEET_TASKS = '업무리스트';
 var SHEET_TASKS_DONE = '완료된업무';
+var SHEET_PROP_MGMT = '제안서관리';     // 제안한 제안서 관리(앱의 '제안서 관리' 메뉴). 음성 기록용 '제안서요청'과 별개.
+var SHEET_PROP_DELETED = '삭제된제안서';
 var SHEET_GEO = '지점위치';   // 지점별 좌표(위도/경도). 지도 기능용. 지점당 1행.
 var SHEET_GEO_SRC = '지점주소'; // 사용자가 엑셀에서 붙여넣는 원본 주소 시트(은행명/지점명/주소)
 var DATA_SPREADSHEET_ID = '1z1XB9HUxc8AtvDPXPRnzljLnXR05FJtz1Y3ChfW2iq4'; // 시스템 데이터 전용 스프레드시트("방카 활동의 기록 (시스템 데이터)")
@@ -117,7 +119,8 @@ function readRowsCached(sheetName) {
 }
 
 var CACHED_SHEETS = [SHEET_SELLER, SHEET_PROPOSAL, SHEET_LOG, SHEET_USERS,
-                     SHEET_DELETED, SHEET_TASKS, SHEET_TASKS_DONE, SHEET_GEO];
+                     SHEET_DELETED, SHEET_TASKS, SHEET_TASKS_DONE, SHEET_GEO,
+                     SHEET_PROP_MGMT, SHEET_PROP_DELETED];
 
 function invalidateAllCaches() {
   var keys = CACHED_SHEETS.map(function (n) { return 'VER:' + n; });
@@ -140,7 +143,8 @@ var MUTATING_ACTIONS = {
   updateSellerName: true, addNewSeller: true, deleteSeller: true,
   login: true, addTask: true, editTask: true, completeTask: true,
   moveTask: true, setTaskAlarm: true, deleteCompletedTask: true,
-  updateVisit: true, deleteVisit: true, setPriority: true, reorderTasks: true
+  updateVisit: true, deleteVisit: true, setPriority: true, reorderTasks: true,
+  addProposalItem: true, editProposalItem: true, deleteProposalItem: true
 };
 
 // 일회성 유틸: 판매자정보 시트 K열(영업대상 체크박스) 308행부터 마지막행까지 체크박스로 채움.
@@ -256,6 +260,16 @@ function doGet(e) {
       result = handleMoveTask(e.parameter.id || '', e.parameter.direction || '');
     } else if (action === 'reorderTasks') {
       result = handleReorderTasks(JSON.parse(e.parameter.ids || '[]'));
+    } else if (action === 'listProposalItems') {
+      result = handlePropList();
+    } else if (action === 'listDeletedProposalItems') {
+      result = handlePropDeletedList();
+    } else if (action === 'addProposalItem') {
+      result = handlePropAdd(JSON.parse(e.parameter.data || '{}'));
+    } else if (action === 'editProposalItem') {
+      result = handlePropEdit(e.parameter.id || '', JSON.parse(e.parameter.data || '{}'));
+    } else if (action === 'deleteProposalItem') {
+      result = handlePropDelete(e.parameter.id || '');
     } else if (action === 'sellerDump') {
       result = handleSellerDump();
     } else if (action === 'setTaskAlarm') {
@@ -1473,6 +1487,7 @@ function handleBootstrap() {
     me: safe(handleGetMe),
     branches: safe(handleListBranches),
     tasks: safe(handleListTasks),
+    proposals: safe(handlePropList),
     dashboard: safe(handleDashboard)
   };
 }
@@ -2422,6 +2437,156 @@ function getTasksSheet() {
     sheet.appendRow(['id', '순서', '입력일', '대상유형', '은행', '지점', '판매자명', '직책', '대상텍스트', '메모', '알람일시', '담당자이메일']);
   }
   return sheet;
+}
+
+// === 제안서 관리 ===
+// 제안서관리: [id, 입력일, 은행, 지점, 판매자명, 직책, 고객, 상품, 금액, 가능성, 추진일, 비고, 담당자이메일, 수정일시]
+// 삭제된제안서: 위 14개 + 삭제일시
+var PROP_HEADERS = ['id', '입력일', '은행', '지점', '판매자명', '직책', '고객', '상품', '금액', '가능성', '추진일', '비고', '담당자이메일', '수정일시'];
+var PROP_COL_EMAIL = 12; // 0-based
+
+function getPropSheet(name, headers) {
+  var ss = getSS();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    // 추진일/금액이 날짜·숫자로 자동 변환되지 않게 글자 형식으로 둔다
+    sheet.getRange('A:Z').setNumberFormat('@');
+  }
+  return sheet;
+}
+
+// 시트가 날짜로 바꿔 저장한 칸도 'yyyy-MM-dd' 글자로 돌려준다
+function propCellText(v, withTime) {
+  if (v instanceof Date) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), withTime ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
+  }
+  return String(v === null || v === undefined ? '' : v);
+}
+
+function propRowToObj(r) {
+  return {
+    id: String(r[0] || ''), 입력일: propCellText(r[1]), 은행: String(r[2] || ''), 지점: String(r[3] || ''),
+    판매자명: String(r[4] || ''), 직책: String(r[5] || ''), 고객: String(r[6] || ''), 상품: String(r[7] || ''),
+    금액: propCellText(r[8]), 가능성: String(r[9] || ''), 추진일: propCellText(r[10]), 비고: String(r[11] || ''),
+    수정일시: propCellText(r[13], true)
+  };
+}
+
+function propFieldsFromData(data) {
+  var amount = String(data.amount || '').replace(/[^0-9]/g, '');
+  var chance = String(data.chance || '').trim();
+  if (['상', '중', '하'].indexOf(chance) === -1) chance = '';
+  var date = String(data.date || '').trim();
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) date = '';
+  return [
+    String(data.bank || '').trim(), String(data.branch || '').trim(),
+    String(data.seller || '').trim(), String(data.title || '').trim(),
+    String(data.customer || '').trim(), String(data.product || '').trim(),
+    amount, chance, date, String(data.note || '').trim()
+  ];
+}
+
+function propNow() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+}
+
+function propRowIsMine(row, email) {
+  var rowEmail = String(row[PROP_COL_EMAIL] || '').trim().toLowerCase();
+  return !email || !rowEmail || rowEmail === email;
+}
+
+function handlePropList() {
+  var email = getCurrentUserEmail().toLowerCase();
+  var rows = readRowsCached(SHEET_PROP_MGMT);
+  var items = [];
+  for (var i = 1; i < rows.length; i++) {
+    if (!rows[i][0] || !propRowIsMine(rows[i], email)) continue;
+    items.push(propRowToObj(rows[i]));
+  }
+  return { ok: true, items: items };
+}
+
+function handlePropDeletedList() {
+  var email = getCurrentUserEmail().toLowerCase();
+  var rows = readRowsCached(SHEET_PROP_DELETED);
+  var items = [];
+  for (var i = 1; i < rows.length; i++) {
+    if (!rows[i][0] || !propRowIsMine(rows[i], email)) continue;
+    var o = propRowToObj(rows[i]);
+    o.삭제일시 = propCellText(rows[i][14], true);
+    items.push(o);
+  }
+  items.sort(function (a, b) { return b.삭제일시.localeCompare(a.삭제일시); });
+  return { ok: true, items: items };
+}
+
+// 앱이 정한 id로 추가한다. 같은 id가 이미 있으면(재전송) 다시 쓰지 않는다.
+function handlePropAdd(data) {
+  var f = propFieldsFromData(data);
+  if (!f[0] || !f[1]) return { ok: false, message: '은행과 지점을 선택해주세요.' };
+  var id = String(data.id || '');
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) id = Utilities.getUuid();
+  var sheet = getPropSheet(SHEET_PROP_MGMT, PROP_HEADERS);
+  var rows = readRows(SHEET_PROP_MGMT);
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === id) return { ok: true, id: id, duplicate: true };
+  }
+  var del = readRows(SHEET_PROP_DELETED);
+  for (var j = 1; j < del.length; j++) {
+    if (String(del[j][0]) === id) return { ok: true, id: id, duplicate: true };
+  }
+  var email = getCurrentUserEmail();
+  var row = [id, resolveDateLabel('')].concat(f).concat([email, propNow()]);
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setNumberFormat('@').setValues([row]);
+  return { ok: true, id: id };
+}
+
+function handlePropEdit(id, data) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var f = propFieldsFromData(data);
+  if (!f[0] || !f[1]) return { ok: false, message: '은행과 지점을 선택해주세요.' };
+  var email = getCurrentUserEmail().toLowerCase();
+  var sheet = getPropSheet(SHEET_PROP_MGMT, PROP_HEADERS);
+  var rows = readRows(SHEET_PROP_MGMT);
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) !== id) continue;
+    if (!propRowIsMine(rows[i], email)) return { ok: false, message: '다른 담당자의 제안서입니다.' };
+    sheet.getRange(i + 1, 3, 1, f.length).setNumberFormat('@').setValues([f]);
+    sheet.getRange(i + 1, 14).setNumberFormat('@').setValue(propNow());
+    return { ok: true };
+  }
+  return { ok: false, message: '제안서를 찾을 수 없습니다(이미 삭제되었을 수 있습니다).' };
+}
+
+// 삭제: 원본을 '삭제된제안서'로 옮긴다. 옮긴 뒤 원본을 지우는 도중 끊겨 재시도돼도 두 번 옮기지 않는다.
+function handlePropDelete(id) {
+  if (!id) return { ok: false, message: 'id가 없습니다.' };
+  var email = getCurrentUserEmail().toLowerCase();
+  var sheet = getPropSheet(SHEET_PROP_MGMT, PROP_HEADERS);
+  var delSheet = getPropSheet(SHEET_PROP_DELETED, PROP_HEADERS.concat(['삭제일시']));
+  var rows = readRows(SHEET_PROP_MGMT);
+  var del = readRows(SHEET_PROP_DELETED);
+  var already = false;
+  for (var j = 1; j < del.length; j++) {
+    if (String(del[j][0]) === id) { already = true; break; }
+  }
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) !== id) continue;
+    if (!propRowIsMine(rows[i], email)) return { ok: false, message: '다른 담당자의 제안서입니다.' };
+    if (!already) {
+      var r = rows[i].slice(0, PROP_HEADERS.length).map(function (v, n) { return propCellText(v, n === 13); });
+      while (r.length < PROP_HEADERS.length) r.push('');
+      r.push(propNow());
+      delSheet.getRange(delSheet.getLastRow() + 1, 1, 1, r.length).setNumberFormat('@').setValues([r]);
+    }
+    sheet.deleteRow(i + 1);
+    return { ok: true };
+  }
+  if (already) return { ok: true, duplicate: true };
+  return { ok: false, message: '제안서를 찾을 수 없습니다.' };
 }
 
 function getTasksDoneSheet() {
