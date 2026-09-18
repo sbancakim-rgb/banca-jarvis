@@ -351,16 +351,19 @@
   .prop-stats b { color: var(--text); }
   .prop-sort { display: flex; gap: 6px; margin-top: 8px; }
   .prop-sort button { padding: 6px 10px; font-size: 12px; }
+  .prop-group { margin-top: 14px; }
+  .prop-group-head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px 2px; border-bottom: 2px solid var(--primary); }
+  .prop-branch { font-size: 15.5px; font-weight: 800; color: var(--text); }
+  .prop-group-meta { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--primary); }
   .prop-item { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 13.5px; line-height: 1.5; }
-  .prop-item.overdue { border-color: #fca5a5; }
   .prop-item-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .prop-cust { font-weight: 700; }
+  .prop-cust { font-weight: 600; color: var(--muted); }
   .prop-chance { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
   .prop-chance.c-상 { background: #dcfce7; color: #15803d; }
   .prop-chance.c-중 { background: #fef3c7; color: #b45309; }
   .prop-chance.c-하 { background: #e2e8f0; color: #475569; }
   .prop-dday { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--primary); }
-  .prop-dday.past { color: var(--danger); }
+  .prop-dday.past { color: var(--muted); font-weight: 600; }
   .prop-sub { font-size: 12.5px; color: var(--muted); }
   .prop-amount { font-weight: 700; color: var(--text); }
   .prop-note { margin-top: 4px; white-space: pre-wrap; }
@@ -2243,7 +2246,8 @@
 
     // 금액은 '억'을 단위로 적는다. 숫자만 쓰면 억으로 읽고(1.5 = 1억 5천만원),
     // 글자가 섞이면('월 50만원', '일시납 1억 5천') 적은 그대로 저장해서 보여준다.
-    function isNumericAmount(v) { return /^[\d.,\s]+$/.test(String(v || '')) && /\d/.test(String(v || '')); }
+    // '30', '1.5', '30억' 모두 숫자(억)로 읽는다. '월 50만원'처럼 다른 글자가 섞이면 적은 그대로 둔다.
+    function isNumericAmount(v) { return /^[\d.,\s]*\d[\d.,\s]*억?\s*$/.test(String(v || '')); }
     function normalizeAmount(v) {
       const t = String(v || '').trim();
       if (!isNumericAmount(t)) return t;
@@ -2282,17 +2286,36 @@
     }
     function ddayLabel(n) { return n === null ? '' : n === 0 ? 'D-day' : n > 0 ? 'D-' + n : 'D+' + (-n); }
 
-    function sortedProposals() {
-      const list = propState.slice();
-      if (propSort === 'chance') {
-        list.sort((a, b) => ((CHANCE_RANK[a.가능성] ?? 9) - (CHANCE_RANK[b.가능성] ?? 9)) || (a.추진일 || '9').localeCompare(b.추진일 || '9'));
-      } else if (propSort === 'recent') {
-        list.reverse();
-      } else {
-        // 추진일이 가까운 것부터, 추진일 없는 것은 뒤로
-        list.sort((a, b) => (a.추진일 || '9999').localeCompare(b.추진일 || '9999'));
-      }
-      return list;
+    // 추진일 정렬 키: 앞으로 올 날짜가 먼저, 지난 날짜는 그 뒤, 날짜 없는 것은 맨 뒤.
+    // (지난 추진일도 목록에서 사라지지 않는다. D-day는 참고용 표시일 뿐이다)
+    function propDateKey(x) {
+      if (!x.추진일) return '3';
+      const dd = daysUntil(x.추진일);
+      return (dd !== null && dd < 0 ? '2' : '1') + x.추진일;
+    }
+    function propSortKey(x, index) {
+      if (propSort === 'chance') return String(CHANCE_RANK[x.가능성] ?? 9) + propDateKey(x);
+      if (propSort === 'recent') return String(100000 - index).padStart(6, '0');
+      return propDateKey(x);
+    }
+    // 같은 지점끼리 묶는다. 묶음 순서는 그 안에서 가장 앞서는 제안서 기준.
+    function groupedProposals() {
+      const order = new Map();
+      propState.forEach((x, i) => { if (!order.has(x.id)) order.set(x.id, i); });
+      const groups = new Map();
+      propState.forEach(x => {
+        const key = x.은행 + '|' + x.지점;
+        if (!groups.has(key)) groups.set(key, { 은행: x.은행, 지점: x.지점, items: [] });
+        groups.get(key).items.push(x);
+      });
+      const arr = [...groups.values()];
+      arr.forEach(g => {
+        g.items.sort((a, b) => propSortKey(a, order.get(a.id)).localeCompare(propSortKey(b, order.get(b.id))));
+        g.key = propSortKey(g.items[0], order.get(g.items[0].id));
+        g.total = g.items.reduce((a, x) => a + amountEok(x.금액), 0);
+      });
+      arr.sort((a, b) => a.key.localeCompare(b.key));
+      return arr;
     }
 
     function renderProposals() {
@@ -2319,29 +2342,40 @@
         listEl.innerHTML = '<div style="font-size:12.5px;color:var(--muted);text-align:center;padding:10px;">등록된 제안서가 없습니다.</div>';
         return;
       }
-      sortedProposals().forEach(x => {
-        const dd = daysUntil(x.추진일);
-        const div = document.createElement('div');
-        div.className = 'prop-item' + (dd !== null && dd < 0 ? ' overdue' : '');
-        const who = [x.은행 + ' ' + x.지점, x.판매자명 ? x.판매자명 + (x.직책 ? ' ' + x.직책 : '') : ''].filter(Boolean).join(' · ');
-        const amount = formatWon(x.금액);
-        div.innerHTML = `
-          <div class="prop-item-head">
-            <span class="prop-cust">${escapeHtml(x.고객 || '고객 미입력')}</span>
-            ${x.가능성 ? `<span class="prop-chance c-${escapeHtml(x.가능성)}">${escapeHtml(x.가능성)}</span>` : ''}
-            ${pendingIds.has(x.id) ? '<span class="pending-tag">서버 저장 중</span>' : ''}
-            <span class="prop-dday${dd !== null && dd < 0 ? ' past' : ''}">${escapeHtml(x.추진일 ? x.추진일 + ' ' + ddayLabel(dd) : '')}</span>
-          </div>
-          <div>${escapeHtml(x.상품 || '상품 미입력')}${amount ? ` · <span class="prop-amount">${escapeHtml(amount)}</span>` : ''}${readableWon(x.금액) ? ` <span class="prop-sub">(${escapeHtml(readableWon(x.금액))})</span>` : ''}</div>
-          <div class="prop-sub">${escapeHtml(who)}${x.입력일 ? ' · 입력 ' + escapeHtml(x.입력일) : ''}</div>
-          ${x.비고 ? `<div class="prop-note">${escapeHtml(x.비고)}</div>` : ''}
-          <div class="task-item-bottom">
-            <button class="btn-neutral prop-edit-btn" style="width:auto;padding:7px 14px;font-size:12.5px;">수정</button>
-            <button class="prop-del-btn" style="width:auto;padding:7px 14px;font-size:12.5px;background:var(--danger);">삭제</button>
-          </div>`;
-        div.querySelector('.prop-edit-btn').onclick = () => startEditProposal(x);
-        div.querySelector('.prop-del-btn').onclick = () => deleteProposal(x);
-        listEl.appendChild(div);
+      groupedProposals().forEach(g => {
+        const box = document.createElement('div');
+        box.className = 'prop-group';
+        const head = document.createElement('div');
+        head.className = 'prop-group-head';
+        head.innerHTML = `<span class="prop-branch">${escapeHtml(g.은행 + ' ' + g.지점)}</span>` +
+          `<span class="prop-group-meta">${g.items.length}건${g.total ? ' · ' + escapeHtml(Number(g.total.toFixed(4)) + '억') : ''}</span>`;
+        box.appendChild(head);
+
+        g.items.forEach(x => {
+          const dd = daysUntil(x.추진일);
+          const div = document.createElement('div');
+          div.className = 'prop-item';
+          const amount = formatWon(x.금액);
+          const sub = [x.판매자명 ? x.판매자명 + (x.직책 ? ' ' + x.직책 : '') : '', x.입력일 ? '입력 ' + x.입력일 : ''].filter(Boolean).join(' · ');
+          div.innerHTML = `
+            <div class="prop-item-head">
+              <span class="prop-cust">${escapeHtml(x.고객 || '고객 미입력')}</span>
+              ${x.가능성 ? `<span class="prop-chance c-${escapeHtml(x.가능성)}">${escapeHtml(x.가능성)}</span>` : ''}
+              ${pendingIds.has(x.id) ? '<span class="pending-tag">서버 저장 중</span>' : ''}
+              <span class="prop-dday${dd !== null && dd < 0 ? ' past' : ''}">${escapeHtml(x.추진일 ? x.추진일 + ' ' + ddayLabel(dd) : '')}</span>
+            </div>
+            <div>${escapeHtml(x.상품 || '상품 미입력')}${amount ? ` · <span class="prop-amount">${escapeHtml(amount)}</span>` : ''}${readableWon(x.금액) ? ` <span class="prop-sub">(${escapeHtml(readableWon(x.금액))})</span>` : ''}</div>
+            ${sub ? `<div class="prop-sub">${escapeHtml(sub)}</div>` : ''}
+            ${x.비고 ? `<div class="prop-note">${escapeHtml(x.비고)}</div>` : ''}
+            <div class="task-item-bottom">
+              <button class="btn-neutral prop-edit-btn" style="width:auto;padding:7px 14px;font-size:12.5px;">수정</button>
+              <button class="prop-del-btn" style="width:auto;padding:7px 14px;font-size:12.5px;background:var(--danger);">삭제</button>
+            </div>`;
+          div.querySelector('.prop-edit-btn').onclick = () => startEditProposal(x);
+          div.querySelector('.prop-del-btn').onclick = () => deleteProposal(x);
+          box.appendChild(div);
+        });
+        listEl.appendChild(box);
       });
     }
 
