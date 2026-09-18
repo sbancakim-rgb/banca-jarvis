@@ -317,6 +317,20 @@
   .md-log-row input, .md-log-row select { flex: 1; min-width: 0; padding: 9px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; }
   #mapLogNote { width: 100%; margin-top: 6px; padding: 9px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; font-family: inherit; resize: vertical; }
   .mv-title { font-size: 12px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
+  /* 지점 타임라인: 방문과 제안서를 한 줄기에 시간순으로 */
+  .tl { position: relative; padding-left: 14px; }
+  .tl::before { content: ''; position: absolute; left: 3px; top: 10px; bottom: 10px; width: 2px; background: var(--border); border-radius: 2px; }
+  .tl .mv-item { position: relative; }
+  .tl .mv-item::before {
+    content: ''; position: absolute; left: -15px; top: 14px; width: 8px; height: 8px; border-radius: 50%;
+    background: #fff; border: 2px solid var(--primary);
+  }
+  .tl .tl-prop::before { border-color: var(--accent); }
+  .tl .mv-item.pending::before { border-color: var(--muted); }
+  .mv-type.prop { background: #f6efe2; color: #8a6a2f; }
+  .tl-prop .tl-line { margin-top: 4px; line-height: 1.5; }
+  .tl-prop .tl-cust { font-weight: 700; }
+  .tl-empty { font-size: 12.5px; color: var(--muted); padding: 10px 0; }
   .mv-item { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-top: 6px; font-size: 12.5px; background: #fff; }
   .mv-head { display: flex; align-items: center; gap: 6px; }
   .mv-date { font-weight: 700; }
@@ -1053,7 +1067,12 @@
     function afterOpSettled(op) {
       try {
         if (/Task/.test(op.action) || op.action === 'reorderTasks') renderTasks(tasksState);
-        if (/ProposalItem$/.test(op.action)) renderProposals();
+        if (/ProposalItem$/.test(op.action)) {
+          renderProposals();
+          if (mapLogTarget && mapLogTarget.bank && document.getElementById('mapDetailOverlay').style.display !== 'none') {
+            renderBranchTimeline(mapLogTarget.bank, mapLogTarget.branch, branchVisitsCache[mapLogTarget.bank + '|' + mapLogTarget.branch] || []);
+          }
+        }
         if (op.action === 'logVisit' && calSelected && op.meta && op.meta.date === calSelected.dateStr &&
             calSelected.cell.classList.contains('selected')) selectCalendarDate(calSelected.dateStr, calSelected.cell);
       } catch (e) {}
@@ -3173,59 +3192,93 @@
     function loadBranchVisits(bank, branch) {
       const el = document.getElementById('mapVisitList');
       if (!bank || !branch) { el.innerHTML = ''; return; }
-      el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">불러오는 중...</div>';
+      el.innerHTML = '<div class="mv-title">지점 타임라인</div><div class="md-empty">불러오는 중...</div>';
       const want = bank + '|' + branch;
-      if (branchVisitsCache[want]) renderBranchVisits(bank, branch, branchVisitsCache[want]);
+      if (branchVisitsCache[want]) renderBranchTimeline(bank, branch, branchVisitsCache[want]);
       jsonpRequest(getUrl(), { action: 'branchVisits', bank, branch }, data => {
         if (!mapLogTarget || mapLogTarget.bank + '|' + mapLogTarget.branch !== want) return; // 다른 지점으로 넘어감
         if (!data || data.error || !data.visits) {
           if (branchVisitsCache[want]) return;
-          el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">이력을 불러오지 못했습니다.</div>';
+          el.innerHTML = '<div class="mv-title">지점 타임라인</div><div class="md-empty">기록을 불러오지 못했습니다.</div>';
           return;
         }
         branchVisitsCache[want] = data.visits;
-        renderBranchVisits(bank, branch, data.visits);
+        renderBranchTimeline(bank, branch, data.visits);
       });
     }
     const branchVisitsCache = {};
 
-    function renderBranchVisits(bank, branch, visits) {
+    // 이 지점에서 있었던 일을 시간순으로 모은다: 방문 기록 + 제안서(이미 받아둔 목록에서 고른다)
+    function branchTimelineItems(bank, branch, visits) {
+      const k = v => String(v || '').replace(/\s+/g, '');
+      const mine = x => k(x.은행) === k(bank) && k(x.지점) === k(branch);
+      const items = [];
+      (visits || []).forEach(v => items.push({ t: String(v.날짜 || '').slice(0, 10), kind: 'visit', v }));
+      outbox.filter(op => op.action === 'logVisit' && op.meta && k(op.meta.bank) === k(bank) && k(op.meta.branch) === k(branch))
+        .forEach(op => items.push({ t: String(op.meta.date || '').slice(0, 10), kind: 'visit', pending: true, op }));
+      propState.filter(mine).forEach(x => items.push({ t: String(x.입력일 || '').slice(0, 10), kind: 'prop', x }));
+      items.sort((a, b) => String(b.t || '').localeCompare(String(a.t || '')));
+      return items;
+    }
+
+    function renderBranchTimeline(bank, branch, visits) {
       const el = document.getElementById('mapVisitList');
-      // 아직 서버에 안 간 방문은 맨 위에 '저장 중'으로 보여준다(수정/삭제는 저장된 뒤에)
-      const pend = outbox.filter(op => op.action === 'logVisit' && op.meta && op.meta.bank === bank && op.meta.branch === branch)
-        .reverse()
-        .map(op => `<div class="mv-item pending">
-            <div class="mv-head">
-              <span class="mv-date">${escapeHtml(localDateLabel(op.meta.date))}</span>
-              <span class="mv-type">${escapeHtml(op.meta.visitType)}</span>
-              <span class="pending-tag">서버 저장 중</span>
-            </div>
-            <div class="mv-text${op.meta.note ? '' : ' empty'}">${op.meta.note ? escapeHtml(op.meta.note) : '내용 없음'}</div>
-          </div>`).join('');
-      const total = visits.length + (pend ? outbox.filter(op => op.action === 'logVisit' && op.meta && op.meta.bank === bank && op.meta.branch === branch).length : 0);
-      if (!total) {
-        el.innerHTML = '<div class="mv-title">방문 이력</div><div class="md-empty">아직 방문 기록이 없습니다.</div>';
+      const items = branchTimelineItems(bank, branch, visits);
+      const visitCount = items.filter(i => i.kind === 'visit').length;
+      const propCount = items.length - visitCount;
+      if (!items.length) {
+        el.innerHTML = '<div class="mv-title">지점 타임라인</div><div class="md-empty">아직 이 지점의 기록이 없습니다.</div>';
         return;
       }
-      el.innerHTML = '<div class="mv-title">방문 이력 ' + total + '건</div>' + pend +
-        visits.map(v => {
-          const txt = (v.내용 || '').trim();
-          return `<div class="mv-item" data-row="${v.row}">
-            <div class="mv-head">
-              <span class="mv-date">${escapeHtml(v.날짜)}</span>
-              <span class="mv-type">${escapeHtml(v.방문유형)}</span>
-              <span class="mv-actions">
-                <button class="mv-edit-btn">수정</button>
-                <button class="mv-del-btn danger">삭제</button>
-              </span>
-            </div>
-            <div class="mv-text${txt ? '' : ' empty'}">${txt ? escapeHtml(txt) : '내용 없음'}</div>
-          </div>`;
-        }).join('');
+      const head = '<div class="mv-title">지점 타임라인 · 방문 ' + visitCount + '건' + (propCount ? ' · 제안서 ' + propCount + '건' : '') + '</div>';
 
-      el.querySelectorAll('.mv-item:not(.pending)').forEach(item => {
+      const rows = items.map(it => {
+        if (it.kind === 'prop') {
+          const x = it.x;
+          const dd = daysUntil(x.추진일);
+          const line = [x.상품, formatWon(x.금액), x.가능성 ? '가능성 ' + x.가능성 : ''].filter(Boolean).join(' · ');
+          return `<div class="mv-item tl-prop">
+            <div class="mv-head">
+              <span class="mv-date">${escapeHtml(x.입력일 || '')}</span>
+              <span class="mv-type prop">제안서 등록</span>
+              ${x.추진일 ? `<span class="prop-dday${dd !== null && dd < 0 ? ' past' : ''}">${escapeHtml(x.추진일 + ' ' + ddayLabel(dd))}</span>` : ''}
+            </div>
+            <div class="tl-line"><span class="tl-cust">${escapeHtml(x.고객 || '고객 미입력')}</span>${line ? ' · ' + escapeHtml(line) : ''}</div>
+            ${x.비고 ? `<div class="mv-text">${escapeHtml(x.비고)}</div>` : ''}
+          </div>`;
+        }
+        if (it.pending) {
+          const m = it.op.meta;
+          return `<div class="mv-item pending">
+            <div class="mv-head">
+              <span class="mv-date">${escapeHtml(localDateLabel(m.date))}</span>
+              <span class="mv-type">${escapeHtml(m.visitType)}</span>
+              <span class="pending-tag">서버 저장 중</span>
+            </div>
+            <div class="mv-text${m.note ? '' : ' empty'}">${m.note ? escapeHtml(m.note) : '내용 없음'}</div>
+          </div>`;
+        }
+        const v = it.v;
+        const txt = (v.내용 || '').trim();
+        return `<div class="mv-item" data-row="${v.row}">
+          <div class="mv-head">
+            <span class="mv-date">${escapeHtml(v.날짜)}</span>
+            <span class="mv-type">${escapeHtml(v.방문유형)}</span>
+            <span class="mv-actions">
+              <button class="mv-edit-btn">수정</button>
+              <button class="mv-del-btn danger">삭제</button>
+            </span>
+          </div>
+          <div class="mv-text${txt ? '' : ' empty'}">${txt ? escapeHtml(txt) : '내용 없음'}</div>
+        </div>`;
+      }).join('');
+
+      el.innerHTML = head + '<div class="tl">' + rows + '</div>';
+
+      el.querySelectorAll('.mv-item[data-row]').forEach(item => {
         const row = Number(item.dataset.row);
-        const v = visits.find(x => x.row === row);
+        const v = (visits || []).find(x => x.row === row);
+        if (!v) return;
         item.querySelector('.mv-edit-btn').onclick = () => startEditVisit(item, bank, branch, v);
         item.querySelector('.mv-del-btn').onclick = () => {
           if (!confirm(`${v.날짜} 방문 기록을 삭제할까요?`)) return;
@@ -3318,7 +3371,7 @@
       const op = queueVisit(bank, branch, date, visitType, note);
       showStatus(statusEl, `✓ ${localDateLabel(date)} ${visitType} 입력 완료`);
       document.getElementById('mapLogNote').value = '';
-      renderBranchVisits(bank, branch, branchVisitsCache[bank + '|' + branch] || []);
+      renderBranchTimeline(bank, branch, branchVisitsCache[bank + '|' + branch] || []);
       const newV = (!visitType || visitType === '지점방문') ? 2 : 1;
       if (date.slice(0, 7) === todayLocalISO().slice(0, 7) && newV > (mapLogTarget.point.v || 0)) {
         mapLogTarget.point.v = newV;
