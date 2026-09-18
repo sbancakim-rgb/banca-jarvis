@@ -61,18 +61,22 @@
     box-shadow: var(--shadow-card);
     border: 1px solid var(--line);
   }
-  .card h3 {
-    margin: 0 0 16px;
+  /* 메뉴 제목은 카드 맨 위를 가로지르는 하늘색 띠로 둔다 — 메뉴 구분이 한눈에 된다 */
+  .card h3, details.fold-card > summary {
+    margin: -20px -18px 16px;
+    padding: 13px 18px;
+    background: linear-gradient(180deg, #eaf3fc 0%, #dfeaf7 100%);
+    border-bottom: 1px solid #cfdff0;
+    border-radius: 17px 17px 0 0;
     font-size: 16.5px;
-    color: var(--text);
+    color: var(--primary);
     font-weight: 700;
     text-align: center;
     letter-spacing: -0.01em;
   }
-  .card h3::after {
-    content: ''; display: block; width: 24px; height: 2px; border-radius: 2px;
-    background: var(--accent); margin: 9px auto 0;
-  }
+  /* 접는 카드(제안서 관리)도 같은 띠. 접혀 있을 때는 띠만 남게 한다 */
+  details.fold-card[open] > summary { margin-bottom: 0; }
+  details.fold-card:not([open]) > summary { margin-bottom: -20px; border-radius: 17px; border-bottom-color: transparent; }
   /* 숫자는 자리를 맞춰 표시한다(금액·건수가 흔들려 보이지 않게) */
   .dash-summary-item .num, .dash-bar-label, .dash-stats, .prop-group-meta, .prop-amount,
   .prop-dday, .fold-badge, .prop-stats, .mv-date, .task-item-date { font-variant-numeric: tabular-nums; }
@@ -355,14 +359,13 @@
   .task-done-item .task-item-date { color: var(--muted); }
 
   /* 접었다 펼치는 카드 */
-  details.fold-card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-    font-size: 16.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+  details.fold-card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
   details.fold-card > summary::-webkit-details-marker { display: none; }
-  details.fold-card > summary::after { content: '▾'; display: inline-block; font-size: 13px; color: var(--muted); transition: transform 0.15s; }
+  details.fold-card > summary::after { content: '▾'; display: inline-block; font-size: 13px; color: var(--primary); opacity: 0.7; transition: transform 0.15s; }
   details.fold-card:not([open]) > summary::after { transform: rotate(-90deg); }
   .fold-badge { font-size: 11.5px; font-weight: 700; color: var(--primary); background: #eef2f8; border: 1px solid #dfe7f1; border-radius: 999px; padding: 2px 9px; }
   .fold-badge:empty { display: none; }
-  .fold-body { margin-top: 14px; }
+  .fold-body { margin-top: 16px; }
   /* 제안서 관리 */
   .prop-form-title { font-size: 12.5px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
   .prop-form-title.editing { color: #b45309; }
