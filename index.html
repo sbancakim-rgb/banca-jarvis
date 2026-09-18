@@ -54,33 +54,34 @@
   }
   .container { max-width: 420px; margin: 0 auto; padding: 0 16px 32px; }
   .card {
+    position: relative;
+    overflow: hidden;
     background: var(--card);
     border-radius: 18px;
-    padding: 20px 18px;
+    padding: 20px 18px 20px 22px;
     margin-top: 14px;
     box-shadow: var(--shadow-card);
     border: 1px solid var(--line);
   }
-  /* 메뉴 제목은 카드 맨 위를 가로지르는 하늘색 띠로 둔다 — 메뉴 구분이 한눈에 된다 */
+  /* 메뉴 구분은 카드 왼쪽 세로 악센트로. 색은 '누르는 버튼'에만 쓰고 제목은 조용하게 둔다 */
+  .card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: linear-gradient(180deg, #2a5f97 0%, var(--primary) 100%);
+  }
   .card h3, details.fold-card > summary {
-    margin: -20px -18px 16px;
-    padding: 13px 18px;
-    background: linear-gradient(180deg, #1e4269 0%, #173553 100%);
-    border-bottom: 1px solid rgba(12, 31, 53, 0.35);
-    border-radius: 17px 17px 0 0;
-    font-size: 16.5px;
-    color: #fff;
-    font-weight: 700;
-    text-align: center;
-    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    font-size: 15.5px;
+    color: var(--text);
+    font-weight: 800;
+    text-align: left;
+    letter-spacing: -0.015em;
   }
-  /* 접는 카드(제안서 관리)도 같은 띠. 접혀 있을 때는 띠만 남게 한다 */
-  details.fold-card[open] > summary { margin-bottom: 0; }
-  details.fold-card:not([open]) > summary { margin-bottom: -20px; border-radius: 17px; border-bottom-color: transparent; }
-  /* 띠 안에 놓이는 것들은 띠 색에 맞춰 흰 계열로 */
-  .card h3 .fold-badge, details.fold-card > summary .fold-badge {
-    background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.28); color: #fff;
-  }
+  details.fold-card[open] > summary { margin-bottom: 14px; }
+  details.fold-card:not([open]) > summary { margin-bottom: 0; }
   /* 숫자는 자리를 맞춰 표시한다(금액·건수가 흔들려 보이지 않게) */
   .dash-summary-item .num, .dash-bar-label, .dash-stats, .prop-group-meta, .prop-amount,
   .prop-dday, .fold-badge, .prop-stats, .mv-date, .task-item-date { font-variant-numeric: tabular-nums; }
@@ -363,9 +364,9 @@
   .task-done-item .task-item-date { color: var(--muted); }
 
   /* 접었다 펼치는 카드 */
-  details.fold-card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  details.fold-card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
   details.fold-card > summary::-webkit-details-marker { display: none; }
-  details.fold-card > summary::after { content: '▾'; display: inline-block; font-size: 13px; color: #fff; opacity: 0.75; transition: transform 0.15s; }
+  details.fold-card > summary::after { content: '▾'; display: inline-block; margin-left: auto; font-size: 13px; color: var(--muted); transition: transform 0.15s; }
   details.fold-card:not([open]) > summary::after { transform: rotate(-90deg); }
   .fold-badge { font-size: 11.5px; font-weight: 700; color: var(--primary); background: #eef2f8; border: 1px solid #dfe7f1; border-radius: 999px; padding: 2px 9px; }
   .fold-badge:empty { display: none; }
